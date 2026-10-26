@@ -1,0 +1,25 @@
+[package]
+name = "vessel-app"
+version = "0.1.0"
+description = "Vessel macOS playback feasibility shell"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+default-run = "vessel-app"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+libc = "0.2"
+libloading = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "=2.12.5", features = [] }
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+url = "2"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true

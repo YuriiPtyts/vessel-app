@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Vessel",
+  "version": "0.1.0",
+  "identifier": "app.vessel.desktop",
+  "build": {
+    "beforeDevCommand": "npm run prepare:native && npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run prepare:native && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vessel — Playback Lab",
+        "width": 960,
+        "height": 900,
+        "minWidth": 420,
+        "minHeight": 640,
+        "backgroundColor": "#151816"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/128x128.png"],
+    "resources": { "runtime/": "runtime/" },
+    "category": "Music",
+    "shortDescription": "A quieter place for your music",
+    "macOS": {
+      "minimumSystemVersion": "13.3"
+    }
+  }
+}

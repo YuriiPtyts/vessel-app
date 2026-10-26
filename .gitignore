@@ -1,0 +1,17 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
+cookies*.txt
+credentials*.json
+.cache/
+src-tauri/runtime/
+test-results/
+playwright-report/

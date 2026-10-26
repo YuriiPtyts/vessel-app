@@ -1,0 +1,36 @@
+{
+  "platform": "darwin-arm64",
+  "dependencies": [
+    {
+      "name": "libmpv",
+      "version": "0.41.0-1",
+      "url": "https://github.com/studiolxd/zapper-libmpv/releases/download/v0.41.0-1/Libmpv.xcframework.zip",
+      "sha256": "875e1cc9e7352bf69b252e0e7be18afc8ffeda45bd585d78a837bb9a5d589950",
+      "file": "libmpv.dylib",
+      "zipEntry": "Libmpv.xcframework/macos-arm64_x86_64/Libmpv.framework/Versions/A/Libmpv",
+      "source": "https://github.com/studiolxd/zapper-libmpv/tree/v0.41.0-1",
+      "license": "LGPL-3.0-or-later dynamic build; complete transitive notices and corresponding-source distribution are release gates"
+    },
+    {
+      "name": "yt-dlp",
+      "version": "2026.10.21",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.21/yt-dlp_macos",
+      "sha256": "7a6fe71d7d680f1fb0ac18d4949873d77db2859e90017c0f44bd94b23be4ee40",
+      "file": "yt-dlp",
+      "executable": true,
+      "source": "https://github.com/yt-dlp/yt-dlp/tree/2026.10.21",
+      "license": "GPL-3.0-or-later standalone artifact; used as a separate process"
+    },
+    {
+      "name": "deno",
+      "version": "2.9.8",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-aarch64-apple-darwin.zip",
+      "sha256": "9f0bf660393da2eaff044cdc7444cb08c73f235849b61d224d825a194ce7c98e",
+      "file": "deno",
+      "zipEntry": "deno",
+      "executable": true,
+      "source": "https://github.com/denoland/deno/tree/v2.9.8",
+      "license": "MIT with third-party components"
+    }
+  ]
+}
