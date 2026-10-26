@@ -3,7 +3,6 @@
   import {
     ArrowRight,
     AudioLines,
-    Check,
     ChevronRight,
     Clock3,
     Compass,
@@ -20,6 +19,16 @@
   import Artwork from './lib/components/Artwork.svelte';
   import TrackList from './lib/components/TrackList.svelte';
   import PlayerBar from './lib/components/PlayerBar.svelte';
+  import AppearancePanel from './lib/components/AppearancePanel.svelte';
+  import NowPlayingPanel from './lib/components/NowPlayingPanel.svelte';
+  import {
+    defaultAppearance,
+    loadAppearance,
+    normalizeAppearance,
+    saveAppearance,
+    type AppearancePreferences,
+  } from './lib/appearance';
+  import { createVolumeControl } from './lib/volume';
   import {
     cancelInspection,
     emptyPlayback,
@@ -67,15 +76,34 @@
   let context = $state<Track[]>([]);
   let busy = $state(false);
   let settingsOpen = $state(false);
-  let opaque = $state(false);
+  let appearance = $state(defaultAppearance());
+  let viewportWidth = $state(0);
+  let artworkOverlayOpen = $state(false);
   let searchInput: HTMLInputElement;
   let searchRevision = 0;
   let playbackRevision = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let lastHistoryId: string | undefined;
+  const volume = createVolumeControl(
+    async (value) => {
+      if (!report) return;
+      const snapshot = await setVolume(value);
+      // A volume reply must not roll track/transport state back to an older snapshot.
+      playback = { ...playback, volume: snapshot.volume };
+    },
+    (failure) => {
+      error = errorMessage(failure);
+    },
+  );
 
   const likedIds = $derived(new Set(library.liked.map((track) => track.id)));
   const playing = $derived(playback.status === 'playing' || playback.status === 'buffering');
+  const shownTrack = $derived(playback.track ?? pending);
+  const artworkVisible = $derived(
+    Boolean(
+      shownTrack && ((appearance.showNowPlaying && viewportWidth >= 1180) || artworkOverlayOpen),
+    ),
+  );
   const currentIndex = $derived(
     context.findIndex((track) => track.id === (pending?.id ?? playback.track?.id)),
   );
@@ -98,9 +126,10 @@
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
     try {
-      opaque =
-        localStorage.getItem('vessel:opaque') === 'true' ||
-        matchMedia('(prefers-reduced-transparency: reduce)').matches;
+      appearance = loadAppearance(
+        localStorage,
+        matchMedia('(prefers-reduced-transparency: reduce)').matches,
+      );
     } catch {
       /* Use the default material if storage is unavailable. */
     }
@@ -123,7 +152,7 @@
           }
           unsubscribe = unlisten;
           playback = await getPlayback();
-          await Promise.all([refreshLibrary(), setMaterialMode(opaque)]);
+          await Promise.all([refreshLibrary(), setMaterialMode(appearance.reducedTransparency)]);
           if (!disposed && view === 'home') void discover();
         }
       } catch (failure) {
@@ -281,19 +310,41 @@
     await control(() => playTrack(trackId, id));
   }
 
-  async function material() {
-    const next = !opaque;
-    try {
-      if (report) await setMaterialMode(next);
-      opaque = next;
+  async function updateAppearance(change: Partial<AppearancePreferences>, persist = true) {
+    const previous = appearance;
+    const next = normalizeAppearance({ ...appearance, ...change });
+    appearance = next;
+    if (change.showNowPlaying === false) artworkOverlayOpen = false;
+    if (persist) {
       try {
-        localStorage.setItem('vessel:opaque', String(next));
+        saveAppearance(localStorage, next);
       } catch {
-        /* Appearance still works for this session. */
+        /* Session-only appearance is still available. */
+      }
+    }
+    try {
+      if (report && next.reducedTransparency !== previous.reducedTransparency) {
+        await setMaterialMode(next.reducedTransparency);
       }
     } catch (failure) {
+      appearance = { ...appearance, reducedTransparency: previous.reducedTransparency };
+      try {
+        saveAppearance(localStorage, appearance);
+      } catch {
+        /* Keep the working session state. */
+      }
       error = errorMessage(failure);
     }
+  }
+
+  function closeArtwork() {
+    artworkOverlayOpen = false;
+    if (viewportWidth >= 1180) void updateAppearance({ showNowPlaying: false });
+  }
+
+  function toggleArtwork() {
+    if (viewportWidth >= 1180) void updateAppearance({ showNowPlaying: !artworkVisible });
+    else artworkOverlayOpen = !artworkOverlayOpen;
   }
 
   function keyboard(event: KeyboardEvent) {
@@ -305,6 +356,7 @@
     }
     if (event.code === 'Escape') {
       settingsOpen = false;
+      artworkOverlayOpen = false;
       if (pending) void cancel();
     }
     if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -339,11 +391,18 @@
   }
 </script>
 
-<svelte:window onkeydown={keyboard} />
+<svelte:window onkeydown={keyboard} bind:innerWidth={viewportWidth} />
 <svelte:document onvisibilitychange={visibility} />
 <svelte:head><title>Vessel — Your music, a little lighter.</title></svelte:head>
 
-<div class="app-frame" class:opaque>
+<div
+  class="app-frame accent-{appearance.accent}"
+  class:opaque={appearance.reducedTransparency}
+  class:sidebar-compact={appearance.sidebarCollapsed}
+  class:density-compact={appearance.density === 'compact'}
+  class:with-now-playing={artworkVisible && viewportWidth >= 1180}
+  style:--glass-opacity={appearance.glassOpacity / 100}
+>
   <div class="window-drag-region" data-tauri-drag-region></div>
   <aside class="sidebar" aria-label="Main navigation">
     <div class="brand">
@@ -673,6 +732,17 @@
     </main>
   </div>
 
+  {#if artworkVisible && shownTrack}
+    <NowPlayingPanel
+      track={shownTrack}
+      {playback}
+      loading={Boolean(pending && !playback.track)}
+      liked={likedIds.has(shownTrack.id)}
+      onclose={closeArtwork}
+      onlike={() => void like(shownTrack)}
+    />
+  {/if}
+
   <PlayerBar
     {playback}
     {pending}
@@ -683,7 +753,7 @@
     canNext={currentIndex >= 0 && currentIndex < context.length - 1}
     onpause={() => void control(() => setPaused(playback.status !== 'paused'))}
     onseek={(position) => control(() => seekTrack(position))}
-    onvolume={(value) => control(() => setVolume(value))}
+    onvolume={volume}
     onstop={() => {
       void cancel();
       void control(stopPlayback);
@@ -700,26 +770,21 @@
       if (playback.track) void like(playback.track);
     }}
     onquality={(id) => void quality(id)}
+    onartwork={toggleArtwork}
+    {artworkVisible}
   />
 
-  {#if settingsOpen}<section class="appearance-popover" aria-label="Appearance settings">
-      <div class="popover-heading">
-        <h2>A little more you.</h2>
-        <button
-          class="icon-button"
-          aria-label="Close appearance settings"
-          onclick={() => {
-            settingsOpen = false;
-          }}><X size={15} /></button
-        >
-      </div>
-      <button class="appearance-option" role="switch" aria-checked={opaque} onclick={material}
-        ><span
-          ><strong>Reduce transparency</strong><small>A solid backdrop, with the same calm.</small
-          ></span
-        ><span class="toggle" class:on={opaque}
-          >{#if opaque}<Check size={11} />{/if}</span
-        ></button
-      >
-    </section>{/if}
+  {#if settingsOpen}<AppearancePanel
+      preferences={appearance}
+      onchange={(change, persist) => void updateAppearance(change, persist)}
+      onclose={() => {
+        settingsOpen = false;
+      }}
+      onreset={() => {
+        artworkOverlayOpen = false;
+        void updateAppearance(
+          defaultAppearance(matchMedia('(prefers-reduced-transparency: reduce)').matches),
+        );
+      }}
+    />{/if}
 </div>

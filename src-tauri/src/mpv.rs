@@ -282,3 +282,23 @@ fn check(code: c_int) -> Result<()> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "loads bundled libmpv and reads actual native volume; no audio is played"]
+    fn native_volume_values_are_applied_immediately() {
+        let root = std::env::var_os("VESSEL_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime")
+            });
+        let engine = Mpv::open(&RuntimePaths::new(root)).unwrap();
+        for volume in [0.0, 27.0, 64.0, 100.0, 0.0] {
+            engine.set("volume", &volume.to_string()).unwrap();
+            assert!((engine.number("volume").unwrap() - volume).abs() < 0.01);
+        }
+    }
+}

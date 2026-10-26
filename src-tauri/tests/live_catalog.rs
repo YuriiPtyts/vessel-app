@@ -33,6 +33,29 @@ async fn music_search_returns_metadata_and_paginates_without_duplicates() {
             .iter()
             .any(|track| track.thumbnail_url.is_some())
     );
+    let artwork_url = first
+        .tracks
+        .iter()
+        .find_map(|track| track.thumbnail_url.as_deref())
+        .unwrap();
+    let image = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap()
+        .get(artwork_url)
+        .send()
+        .await
+        .unwrap();
+    assert!(image.status().is_success());
+    assert!(
+        image
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("image/")
+    );
     if first.has_more {
         let next = catalog
             .search("Daft Punk", SearchKind::Songs, true)

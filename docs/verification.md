@@ -84,6 +84,24 @@ Optional account acquisition/storage/library reads; broader track/region/account
 - Song and music-video search are implemented. Album/artist/playlist detail browsing, account support, persistent queues, auto-advance, automatic stream recovery, and full CPU/memory/energy budgets remain open.
 - Local likes/history are not YouTube Music account state. Metadata is retained on this Mac; no account access is required.
 
+## Duskfox glass, live volume, and artwork milestone
+
+### Verified
+
+- Confirmed the owner's configured Zed dark theme as **Duskfox - blurred** in Nightfox for Zed 0.10.5. Mapped its public palette values into semantic theme tokens; Zed configuration is neither copied into the repository nor read by the running app.
+- The original pointer-held volume test went red: no `set_volume` request arrived before mouseup. It now passes with live input writes, local gesture retention, a final settling write, and a dedicated latest-value lane that keeps at most one native volume write in flight.
+- A 90 ms mocked-native-delay test verifies responsive dragging, intermediate-value coalescing, exact final value, no control disabling, and protection from older playback snapshots. These are WebKit/IPC contract checks, not an acoustic latency measurement.
+- Real bundled libmpv immediately read back the requested volume values `0`, `27`, `64`, `100`, and `0`. No audio was played for this native-boundary check. The same check passed using the `.app`'s runtime and a system-only PATH.
+- Eight WebKit tests pass, including the prior music flows, Duskfox defaults, persisted accent/tint/density/sidebar/artwork settings, reset, reduced transparency removing CSS filters and requesting native effects removal, prominent artwork, and high-resolution-image fallback. Repeated playback snapshots do not restart failed larger-image requests.
+- A real guest-catalog thumbnail returned a successful HTTP response with an image content type. Original provider thumbnails are the fallback for optional 512px Google resize requests.
+- Customization and artwork screenshots were visually reviewed with controlled IPC/artwork fixtures. They are not native-window automation or a claim of compositor performance measurement.
+- Svelte diagnostics, the production frontend build, Rust formatting/Clippy with warnings denied, ordinary Rust tests, real catalog pagination/artwork checks, and macOS app packaging pass.
+- The Duskfox/dark Sidebar-material app remained running for eight seconds with a system-only PATH and no captured output. The packaged app remains approximately **184.27 MiB**.
+
+### Scope
+
+The app now has a single complete default palette, four palette accent choices, adjustable glass tint, opaque mode, compact/comfortable rows, compact navigation, and a collapsible now-playing artwork panel. Preferences migrate the previous opacity setting and are kept locally. Additional complete themes are an owner-directed future milestone in themes.md. Native fullscreen/dragging/accessibility QA and full memory/CPU/energy budgets remain open.
+
 ## Repository state
 
-Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.
+Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.

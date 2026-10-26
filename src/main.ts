@@ -1,6 +1,8 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
 import './app.css';
+import './lib/themes/duskfox.css';
+import './lib/glass.css';
 
 const target = document.getElementById('app');
 

@@ -1,5 +1,5 @@
-export async function nativeFixture(page) {
-  await page.addInitScript(() => {
+export async function nativeFixture(page, options = {}) {
+  await page.addInitScript((options) => {
     const cover = (color, name) =>
       `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x2=".8" y2="1"><stop stop-color="${color}"/><stop offset="1" stop-color="#24232c"/></linearGradient></defs><rect width="300" height="300" fill="url(#g)"/><circle cx="160" cy="133" r="85" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1"/><path d="M0 200Q100 70 300 210V300H0" fill="#dec6aa" fill-opacity=".2"/><text x="23" y="263" fill="#eee0cb" font-family="Georgia" font-size="19">${name}</text></svg>`)}`;
     const tracks = [
@@ -9,7 +9,7 @@ export async function nativeFixture(page) {
         artist: 'Daft Punk',
         album: 'Random Access Memories',
         durationSeconds: 338,
-        thumbnailUrl: cover('#92755d', 'Random Access Memories'),
+        thumbnailUrl: options.artworkUrl ?? cover('#92755d', 'Random Access Memories'),
       },
       {
         id: 'd7woYjGWs6k',
@@ -78,6 +78,14 @@ export async function nativeFixture(page) {
     let listener;
     window.isTauri = true;
     window.__vesselCalls = [];
+    window.__vesselVolumeInFlight = 0;
+    window.__vesselMaxVolumeInFlight = 0;
+    window.__vesselEmitSnapshot = (override) =>
+      listener?.({
+        event: 'playback-state',
+        id: 1,
+        payload: structuredClone({ ...snapshot, ...override }),
+      });
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
     window.__TAURI_INTERNALS__ = {
       transformCallback(callback) {
@@ -154,7 +162,15 @@ export async function nativeFixture(page) {
             snapshot.positionSeconds = args.position;
             break;
           case 'set_volume':
+            window.__vesselVolumeInFlight++;
+            window.__vesselMaxVolumeInFlight = Math.max(
+              window.__vesselMaxVolumeInFlight,
+              window.__vesselVolumeInFlight,
+            );
+            if (options.volumeDelay)
+              await new Promise((resolve) => setTimeout(resolve, options.volumeDelay));
             snapshot.volume = args.volume;
+            window.__vesselVolumeInFlight--;
             break;
           case 'cancel_inspection':
             return;
@@ -175,5 +191,5 @@ export async function nativeFixture(page) {
         return structuredClone(snapshot);
       },
     };
-  });
+  }, options);
 }

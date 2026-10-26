@@ -9,3 +9,7 @@ Keep product experiments separate from current implementation commitments. Revis
 | Listening Postcards | Manually publish ten 3-5-track pages with personal notes and ordinary provider links | Recipients open multiple tracks, share their own, or request app import | Core retention and existing recommendation behavior are observed |
 
 These are utility/retention/sharing hypotheses, not claims of novelty or guaranteed growth. Competitor references: Pear Desktop and Spotify Jam. Do not add automatic classification, cloud sync, hosted audio, or a social network to the current scope.
+
+## Owner-directed future milestone
+
+**Additional themes:** ship a curated theme library/picker on the semantic palette tokens, keep Duskfox as the default, and preserve independent interface preferences. Scope and completion signals are recorded in [themes.md](themes.md).

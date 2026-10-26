@@ -1,23 +1,34 @@
 <script lang="ts">
   import { Music2 } from '@lucide/svelte';
-  let { url, className = '' }: { url?: string | null; className?: string } = $props();
-  let failed = $state(false);
+  import { artworkSource } from '../artwork';
+  let {
+    url,
+    className = '',
+    size = 128,
+    alt = '',
+  }: { url?: string | null; className?: string; size?: number; alt?: string } = $props();
+  let attempt = $state(0);
+  let previousSource: string | undefined;
+  const source = $derived(attempt === 0 ? artworkSource(url, size) : url);
   $effect(() => {
-    url;
-    failed = false;
+    const key = `${size}:${url ?? ''}`;
+    if (key !== previousSource) {
+      previousSource = key;
+      attempt = 0;
+    }
   });
 </script>
 
 <span class="artwork {className}">
-  {#if url && !failed}
+  {#if source && attempt < 2}
     <img
-      src={url}
-      alt=""
+      src={source}
+      {alt}
       loading="lazy"
       decoding="async"
       referrerpolicy="no-referrer"
       onerror={() => {
-        failed = true;
+        attempt = attempt === 0 && source !== url ? 1 : 2;
       }}
     />
   {:else}

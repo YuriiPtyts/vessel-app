@@ -43,9 +43,13 @@ Do not fetch/decode on the audio callback. Do not introduce a permanent Python/N
 
 Use Tauri 2 APIs and a native macOS titlebar/traffic lights first. Exercise native semantic vibrancy before adding any custom Objective-C integration. Windows/Linux adapters come later. Opaque materials are a first-class visual mode.
 
-The macOS platform override configures a transparent window, native traffic lights, an overlay titlebar, and `UnderWindowBackground` semantic material through Tauri's built-in v2 API. Version 2.12.5 exposes this without a separate vibrancy plugin; its current schema documents the old macOS-private-api toggle as a no-op since 2.12.1. Reduced transparency removes native effects and the player's CSS backdrop blur, then uses opaque surfaces. Reduced motion is respected. Only the floating player uses CSS backdrop blur; static hero art does not animate continuously.
+The macOS platform override configures a transparent window, native traffic lights, an overlay titlebar, dark appearance, and `Sidebar` semantic material through Tauri's built-in v2 API. Version 2.12.5 exposes this without a separate vibrancy plugin; its current schema documents the old macOS-private-api toggle as a no-op since 2.12.1. Reduced transparency removes native effects and CSS backdrop filters, then uses opaque surfaces. Reduced motion is respected. CSS blur is limited to the floating player and temporary popovers, with WebKit prefixes; the main stage reuses native vibrancy.
 
 The frontend is organized into a shell and Artwork, TrackList, and PlayerBar components. Public artwork URLs are restricted to HTTPS Google image hosts and loaded lazily without a referrer. The frontend maintains the transient result-set cursor used by previous/next buttons; it is not a durable queue and does not auto-advance in a hidden renderer. A Rust queue remains a separate milestone.
+
+`volume.ts` owns a separate latest-value writer: slider input sends an immediate native update, keeps at most one write in flight, and coalesces intermediate values. It bypasses the transport `busy` gate. PlayerBar retains the local gesture value until the final write settles so older playback events cannot move the thumb under the pointer. Volume acknowledgments update only the volume field, never older track/transport state.
+
+`appearance.ts` validates and persists versioned presentation preferences. Palette tokens and material rules are separate; Duskfox is the only complete theme currently shipped. AppearancePanel controls tint/accent/density/sidebar/artwork and reduced transparency. NowPlayingPanel requests up to 512px artwork using only Google's known resize syntax; Artwork retries the original thumbnail once and retains that fallback across playback snapshots. No canvas extraction or continuously animated artwork is introduced.
 
 ## Closed-source packaging constraint
 

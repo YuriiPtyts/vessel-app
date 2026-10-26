@@ -6,6 +6,10 @@ Recorded 2026-10-26 from the owner's answers.
 
 The owner explicitly rejected the link-inspection lab as the main experience. Normal listening must begin with music search and direct playback, presented as a finished music-app layout. Keep extraction and format inspection behind the interface. Current navigation is Listen now, Search, local Liked songs, and Recently played, with a persistent player. Account support remains optional and an early priority; local saved music must be clearly distinguished from the account library.
 
+## Live controls and personal appearance
+
+The owner requested real-time volume during dragging, a more transparent glass treatment, their current Zed theme's palette as the default, persistent interface customization, and prominent track artwork. The detected palette is Duskfox – blurred. Additional complete themes are an explicit future goal; see themes.md. The owner also requested that completed, verified changes be committed and pushed automatically; this workflow is recorded in AGENTS.md.
+
 ## Confirmed
 
 1. Polish macOS first. Add other operating systems in future milestones.

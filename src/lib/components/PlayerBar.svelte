@@ -39,6 +39,8 @@
     onnext,
     onlike,
     onquality,
+    onartwork,
+    artworkVisible,
   }: {
     playback: PlaybackSnapshot;
     pending: Track | null;
@@ -56,10 +58,15 @@
     onnext: () => void;
     onlike: () => void;
     onquality: (id: string) => void;
+    onartwork: () => void;
+    artworkVisible: boolean;
   } = $props();
   let seekDraft = $state<number | null>(null);
   let volumeDraft = $state<number | null>(null);
   let qualityOpen = $state(false);
+  let volumeRevision = 0;
+  let volumePointerDown = $state(false);
+  let volumeKeyDown = $state(false);
   const active = $derived(['playing', 'paused', 'buffering'].includes(playback.status));
   const shown = $derived(playback.track ?? pending);
   const qualityReady = $derived(
@@ -71,14 +78,47 @@
     seekDraft = null;
   }
   async function volume(value: number) {
+    const revision = ++volumeRevision;
+    volumeDraft = value;
     await onvolume(value);
-    volumeDraft = null;
+    if (revision === volumeRevision && !volumePointerDown && !volumeKeyDown) volumeDraft = null;
+  }
+
+  function finishVolumePointer() {
+    if (!volumePointerDown) return;
+    volumePointerDown = false;
+    if (volumeDraft !== null) void volume(volumeDraft);
+  }
+
+  function finishVolumeKey() {
+    if (!volumeKeyDown) return;
+    volumeKeyDown = false;
+    if (volumeDraft !== null) void volume(volumeDraft);
+  }
+
+  function finishVolumeGesture() {
+    if (!volumePointerDown && !volumeKeyDown) return;
+    volumePointerDown = false;
+    volumeKeyDown = false;
+    if (volumeDraft !== null) void volume(volumeDraft);
   }
 </script>
 
+<svelte:window
+  onpointerup={finishVolumePointer}
+  onpointercancel={finishVolumePointer}
+  onkeyup={finishVolumeKey}
+/>
+
 <section class="floating-player" aria-label="Music player">
   <div class="now-playing">
-    <Artwork url={shown?.thumbnailUrl} className="player-art" />
+    <button
+      class="player-artwork-button"
+      aria-label="Show now playing artwork"
+      aria-expanded={artworkVisible}
+      disabled={!shown}
+      onclick={onartwork}><Artwork url={shown?.thumbnailUrl} className="player-art" /></button
+    >
     <div class="now-playing-copy">
       <h2>{shown?.title ?? 'A little space for your music'}</h2>
       <p>
@@ -138,6 +178,7 @@
         max={playback.durationSeconds ?? 1}
         step="0.1"
         value={seekDraft ?? playback.positionSeconds}
+        style:--range-progress={`${Math.min(100, Math.max(0, ((seekDraft ?? playback.positionSeconds) / (playback.durationSeconds || 1)) * 100))}%`}
         disabled={!active || !playback.durationSeconds || busy}
         oninput={(event) => {
           seekDraft = event.currentTarget.valueAsNumber;
@@ -156,11 +197,18 @@
         max="100"
         step="1"
         value={volumeDraft ?? playback.volume}
-        oninput={(event) => {
-          volumeDraft = event.currentTarget.valueAsNumber;
+        style:--range-progress={`${volumeDraft ?? playback.volume}%`}
+        aria-valuetext={`${Math.round(volumeDraft ?? playback.volume)} percent`}
+        onpointerdown={() => {
+          volumePointerDown = true;
         }}
-        onchange={(event) => volume(event.currentTarget.valueAsNumber)}
-        disabled={busy}
+        onkeydown={() => {
+          volumeKeyDown = true;
+        }}
+        onblur={finishVolumeGesture}
+        oninput={(event) => {
+          void volume(event.currentTarget.valueAsNumber);
+        }}
       />
     </div>
     <div class="quality-anchor">

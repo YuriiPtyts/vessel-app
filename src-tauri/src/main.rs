@@ -63,7 +63,7 @@ async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Resul
         } else {
             Some(
                 EffectsBuilder::new()
-                    .effect(Effect::UnderWindowBackground)
+                    .effect(Effect::Sidebar)
                     .state(EffectState::FollowsWindowActiveState)
                     .build(),
             )

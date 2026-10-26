@@ -12,9 +12,10 @@
         "backgroundColor": "#00000000",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
+        "theme": "Dark",
         "trafficLightPosition": { "x": 20, "y": 23 },
         "windowEffects": {
-          "effects": ["underWindowBackground"],
+          "effects": ["sidebar"],
           "state": "followsWindowActiveState"
         }
       }

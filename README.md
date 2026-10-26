@@ -20,6 +20,12 @@ The macOS shell uses native traffic lights, an overlay titlebar, semantic vibran
 
 Search in the top bar (or press Command-K), then click a result to play. The heart saves a song to **Liked songs**. **Recently played** records tracks after native playback starts. Player arrows move through the result set you started from; this is not yet a persistent queue or automatic radio.
 
+Volume updates live while dragging, with bounded/coalesced native writes. Click the player's cover for a larger now-playing picture; on wide windows the artwork panel is shown by default. The app uses provider artwork and falls back to the original thumbnail when a higher-resolution image is unavailable.
+
+## Appearance
+
+**Duskfox – blurred**, derived from the owner's active Zed palette, is the default. Open **Appearance** to change the accent, glass tint, transparency, song-list density, sidebar layout, and now-playing artwork panel. Choices persist across restarts and can be reset. See [appearance and the planned theme library](docs/themes.md).
+
 ## Development
 
 Requires Node.js, Rust, and Apple's developer tools on macOS. These are development requirements, not intended requirements for end users.
@@ -59,6 +65,7 @@ Real guest playback integration checks (network-dependent; CoreAudio output is m
 ```sh
 cargo test --manifest-path src-tauri/Cargo.toml --test live_playback -- --ignored --nocapture --test-threads=1
 cargo test --manifest-path src-tauri/Cargo.toml --test live_catalog -- --ignored --nocapture --test-threads=1
+cargo test --manifest-path src-tauri/Cargo.toml --lib native_volume_values_are_applied_immediately -- --ignored --nocapture
 ```
 
 WebKit presentation-contract checks (mocked IPC, separate from real playback):

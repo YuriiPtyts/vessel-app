@@ -1,0 +1,42 @@
+/* Duskfox – blurred: palette mapped from Nightfox for Zed (cange/nightfox.zed).
+   Palette facts only; Vessel's layout and material treatment are its own. */
+:root {
+  --theme-bg: #232136;
+  --theme-bg-rgb: 35 33 54;
+  --theme-surface: #191726;
+  --theme-surface-rgb: 25 23 38;
+  --theme-elevated: #2d2a45;
+  --theme-elevated-rgb: 45 42 69;
+  --theme-selection-rgb: 99 87 125;
+  --theme-border: #4b4673;
+  --theme-foreground: #eae8ff;
+  --theme-foreground-rgb: 234 232 255;
+  --theme-text: #e0def4;
+  --theme-secondary: #b1acde;
+  --theme-muted: #817c9c;
+  --theme-subtle: #6e6a86;
+  --theme-rose: #ea9a97;
+  --theme-iris: #c4a7e7;
+  --theme-foam: #9ccfd8;
+  --theme-gold: #f6c177;
+  --theme-green: #a3be8c;
+  --theme-error: #eb6f92;
+  --accent: var(--theme-rose);
+  --accent-strong: var(--theme-rose);
+  --muted: var(--theme-secondary);
+  --faint: var(--theme-secondary);
+  --border: rgb(var(--theme-foreground-rgb) / 0.1);
+  color: var(--theme-text);
+}
+.accent-rose {
+  --accent: var(--theme-rose);
+}
+.accent-iris {
+  --accent: var(--theme-iris);
+}
+.accent-foam {
+  --accent: var(--theme-foam);
+}
+.accent-gold {
+  --accent: var(--theme-gold);
+}
