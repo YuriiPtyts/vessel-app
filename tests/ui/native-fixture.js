@@ -72,6 +72,8 @@ export async function nativeFixture(page, options = {}) {
     };
     let library = { liked: [], recent: [] };
     let snapshot = {
+      playbackId: 0,
+      accountSource: false,
       status: 'idle',
       track: null,
       activeFormat: null,
@@ -82,18 +84,106 @@ export async function nativeFixture(page, options = {}) {
       videoTrackSelected: false,
       decodedSampleRateHz: null,
     };
+    let inspection = null;
+    let queue = {
+      revision: 0,
+      tracks: [],
+      currentIndex: null,
+      autoplay: true,
+      running: false,
+      generating: false,
+      transitioning: false,
+      preparingId: null,
+      seedTitle: null,
+      error: null,
+    };
+    let account = { mode: 'guest', profile: null, error: null, revision: 0 };
     const callbacks = new Map();
-    let listener;
+    const listeners = new Map();
+    function emit(event, payload) {
+      if (event === 'queue-state' && payload === queue) queue.revision++;
+      listeners.get(event)?.({ event, id: 1, payload: structuredClone(payload) });
+    }
+    function startSong(track) {
+      snapshot = {
+        ...snapshot,
+        playbackId: snapshot.playbackId + 1,
+        status: 'loading',
+        track,
+        activeFormat: formats[0],
+        positionSeconds: 0,
+        durationSeconds: track.durationSeconds,
+      };
+      inspection = { track, formats, recommendedFormatId: '251', accountSource: false };
+      const playbackId = snapshot.playbackId;
+      emit('queue-state', queue);
+      emit('selection-state', inspection);
+      emit('playback-state', snapshot);
+      const selection = {
+        inspection: structuredClone(inspection),
+        playback: structuredClone(snapshot),
+      };
+      setTimeout(() => {
+        if (snapshot.playbackId !== playbackId || !snapshot.track) return;
+        snapshot = { ...snapshot, status: 'playing', decodedSampleRateHz: 48000 };
+        library.recent = [track, ...library.recent.filter((old) => old.id !== track.id)];
+        emit('playback-state', snapshot);
+      }, 50);
+      return selection;
+    }
+    function stop() {
+      queue = {
+        ...queue,
+        running: false,
+        transitioning: false,
+        generating: false,
+        preparingId: null,
+      };
+      snapshot = {
+        ...snapshot,
+        status: 'idle',
+        track: null,
+        activeFormat: null,
+        positionSeconds: 0,
+        durationSeconds: null,
+        decodedSampleRateHz: null,
+      };
+      emit('queue-state', queue);
+      emit('playback-state', snapshot);
+    }
     window.isTauri = true;
     window.__vesselCalls = [];
     window.__vesselVolumeInFlight = 0;
     window.__vesselMaxVolumeInFlight = 0;
     window.__vesselEmitSnapshot = (override) =>
-      listener?.({
-        event: 'playback-state',
-        id: 1,
-        payload: structuredClone({ ...snapshot, ...override }),
-      });
+      emit('playback-state', { ...snapshot, ...override });
+    window.__vesselEmitQueue = (override) => emit('queue-state', { ...queue, ...override });
+    window.__vesselAdvanceRadio = () => {
+      queue.currentIndex++;
+      return startSong(queue.tracks[queue.currentIndex]);
+    };
+    window.__vesselCompleteSignIn = () => {
+      account = {
+        mode: 'connected',
+        profile: { name: 'Fixture Listener', email: 'listener@example.test', pictureUrl: null },
+        error: null,
+        revision: account.revision + 1,
+      };
+      emit('account-state', account);
+    };
+    window.__vesselExpireAccount = () => {
+      account = {
+        ...account,
+        mode: 'expired',
+        error: {
+          code: 'session_expired',
+          message: 'Reconnect Google to use your account again.',
+          retryable: false,
+        },
+        revision: account.revision + 1,
+      };
+      emit('account-state', account);
+    };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
     window.__TAURI_INTERNALS__ = {
       transformCallback(callback) {
@@ -113,7 +203,7 @@ export async function nativeFixture(page, options = {}) {
               playbackDependenciesAvailable: true,
             };
           case 'plugin:event|listen':
-            listener = callbacks.get(args.handler);
+            listeners.set(args.event, callbacks.get(args.handler));
             return 1;
           case 'plugin:event|unlisten':
             return;
@@ -121,11 +211,17 @@ export async function nativeFixture(page, options = {}) {
             return;
           case 'playback_snapshot':
             return structuredClone(snapshot);
+          case 'queue_snapshot':
+            return structuredClone(queue);
+          case 'account_snapshot':
+            return structuredClone(account);
+          case 'selection_snapshot':
+            return structuredClone(inspection);
           case 'local_library':
             return structuredClone(library);
           case 'home_feed':
             return {
-              personalized: false,
+              personalized: account.mode === 'connected',
               shelves: [
                 {
                   id: 'provider-picks',
@@ -156,24 +252,76 @@ export async function nativeFixture(page, options = {}) {
           }
           case 'play_song': {
             const track = tracks.find((track) => track.id === args.videoId);
-            snapshot = {
-              ...snapshot,
-              status: 'loading',
-              track,
-              activeFormat: formats[0],
-              durationSeconds: track.durationSeconds,
+            const context = args.context?.length
+              ? args.context.map((id) => tracks.find((track) => track.id === id))
+              : [track, ...tracks.filter((other) => other.id !== track.id)];
+            queue = {
+              ...queue,
+              tracks: context,
+              currentIndex: context.findIndex((item) => item.id === track.id),
+              running: true,
+              seedTitle: track.title,
             };
-            const response = {
-              inspection: { track, formats, recommendedFormatId: '251' },
-              playback: structuredClone(snapshot),
-            };
-            setTimeout(() => {
-              snapshot = { ...snapshot, status: 'playing', decodedSampleRateHz: 48000 };
-              library.recent = [track, ...library.recent.filter((old) => old.id !== track.id)];
-              listener?.({ event: 'playback-state', id: 1, payload: structuredClone(snapshot) });
-            }, 50);
-            return response;
+            return startSong(track);
           }
+          case 'next_song':
+            queue.currentIndex++;
+            return startSong(queue.tracks[queue.currentIndex]);
+          case 'previous_song':
+            if (snapshot.positionSeconds > 3 || queue.currentIndex === 0) {
+              snapshot.positionSeconds = 0;
+              emit('playback-state', snapshot);
+              return null;
+            }
+            queue.currentIndex--;
+            return startSong(queue.tracks[queue.currentIndex]);
+          case 'jump_queue':
+            queue.currentIndex = args.index;
+            queue.running = true;
+            return startSong(queue.tracks[args.index]);
+          case 'remove_queue':
+            queue.tracks.splice(args.index, 1);
+            if (args.index < queue.currentIndex) queue.currentIndex--;
+            emit('queue-state', queue);
+            return structuredClone(queue);
+          case 'set_autoplay':
+            queue.autoplay = args.enabled;
+            emit('queue-state', queue);
+            return structuredClone(queue);
+          case 'retry_radio':
+            queue.error = null;
+            emit('queue-state', queue);
+            return structuredClone(queue);
+          case 'clear_queue':
+            stop();
+            queue = { ...queue, tracks: [], currentIndex: null, seedTitle: null };
+            inspection = null;
+            emit('queue-state', queue);
+            emit('selection-state', null);
+            return structuredClone(queue);
+          case 'connect_google':
+            account.mode = options.googleRejected ? 'unavailable' : 'signingIn';
+            account.error = options.googleRejected
+              ? {
+                  code: 'google_sign_in_unavailable',
+                  message:
+                    'Google declined sign-in in this window. You can keep listening as a guest.',
+                  retryable: false,
+                }
+              : null;
+            emit('account-state', account);
+            return structuredClone(account);
+          case 'cancel_google':
+            account.mode = account.profile ? 'connected' : 'guest';
+            emit('account-state', account);
+            return structuredClone(account);
+          case 'sign_out':
+            stop();
+            account = { mode: 'guest', profile: null, error: null, revision: account.revision + 1 };
+            inspection = null;
+            emit('selection-state', null);
+            emit('account-state', account);
+            return structuredClone(account);
           case 'play_track':
             snapshot.activeFormat = formats.find((format) => format.id === args.formatId);
             break;
@@ -204,15 +352,7 @@ export async function nativeFixture(page, options = {}) {
           case 'cancel_inspection':
             return;
           case 'stop_playback':
-            snapshot = {
-              ...snapshot,
-              status: 'idle',
-              track: null,
-              activeFormat: null,
-              positionSeconds: 0,
-              durationSeconds: null,
-              decodedSampleRateHz: null,
-            };
+            stop();
             break;
           default:
             throw new Error(`Unexpected command: ${command}`);

@@ -4,6 +4,7 @@ import './app.css';
 import './lib/themes/duskfox.css';
 import './lib/glass.css';
 import './lib/home.css';
+import './lib/controls.css';
 
 const target = document.getElementById('app');
 

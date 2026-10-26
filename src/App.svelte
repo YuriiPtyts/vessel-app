@@ -20,6 +20,8 @@
   import AppearancePanel from './lib/components/AppearancePanel.svelte';
   import NowPlayingPanel from './lib/components/NowPlayingPanel.svelte';
   import HomeView from './lib/components/HomeView.svelte';
+  import QueuePanel from './lib/components/QueuePanel.svelte';
+  import AccountPanel from './lib/components/AccountPanel.svelte';
   import {
     defaultAppearance,
     loadAppearance,
@@ -31,6 +33,8 @@
   import {
     cancelInspection,
     emptyPlayback,
+    emptyQueue,
+    guestAccount,
     errorMessage,
     getLibrary,
     getPlayback,
@@ -39,6 +43,22 @@
     browseCollection,
     isCancelled,
     onPlayback,
+    onQueue,
+    onAccount,
+    onSelection,
+    getQueue,
+    getAccount,
+    getSelection,
+    nextSong,
+    previousSong,
+    jumpQueue,
+    removeQueue,
+    clearQueue,
+    setAutoplay,
+    retryRadio,
+    connectGoogle,
+    cancelGoogle,
+    signOut,
     playSong,
     playTrack,
     searchMusic,
@@ -58,6 +78,9 @@
     type HomeFeed,
     type HomeItem,
     type CollectionPage,
+    type QueueSnapshot,
+    type AccountSnapshot,
+    type PlaybackSelection,
   } from './lib/native';
 
   type View = 'home' | 'search' | 'liked' | 'recent' | 'collection';
@@ -73,6 +96,7 @@
   let collectionLoading = $state(false);
   let collectionMore = $state(false);
   let collectionRevision = 0;
+  let homeRevision = 0;
   let query = $state('');
   let kind = $state<SearchKind>('songs');
   let results = $state<SearchResults | null>(null);
@@ -81,7 +105,11 @@
   let playback = $state<PlaybackSnapshot>(emptyPlayback);
   let inspection = $state<TrackInspection | null>(null);
   let pending = $state<Track | null>(null);
-  let context = $state<Track[]>([]);
+  let queue = $state<QueueSnapshot>(emptyQueue);
+  let account = $state<AccountSnapshot>(guestAccount);
+  let queueOpen = $state(false);
+  let accountOpen = $state(false);
+  let accountBusy = $state(false);
   let busy = $state(false);
   let settingsOpen = $state(false);
   let appearance = $state(defaultAppearance());
@@ -92,6 +120,7 @@
   let playbackRevision = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let lastHistoryId: string | undefined;
+  const stateRevision = { playback: 0, queue: 0, selection: 0, account: 0 };
   const volume = createVolumeControl(
     async (value) => {
       if (!report) return;
@@ -106,15 +135,19 @@
 
   const likedIds = $derived(new Set(library.liked.map((track) => track.id)));
   const playing = $derived(playback.status === 'playing' || playback.status === 'buffering');
-  const shownTrack = $derived(playback.track ?? pending);
+  const loadingTrack = $derived(
+    pending ??
+      (queue.transitioning && queue.currentIndex !== null
+        ? queue.tracks[queue.currentIndex]
+        : null),
+  );
+  const shownTrack = $derived(loadingTrack ?? playback.track);
   const artworkVisible = $derived(
     Boolean(
       shownTrack && ((appearance.showNowPlaying && viewportWidth >= 1180) || artworkOverlayOpen),
     ),
   );
-  const currentIndex = $derived(
-    context.findIndex((track) => track.id === (pending?.id ?? playback.track?.id)),
-  );
+  const currentIndex = $derived(queue.currentIndex ?? -1);
   const listTracks = $derived(
     view === 'liked'
       ? library.liked
@@ -127,7 +160,12 @@
 
   onMount(() => {
     let disposed = false;
-    let unsubscribe: (() => void) | undefined;
+    const subscriptions: (() => void)[] = [];
+    async function register(subscription: Promise<() => void>) {
+      const unlisten = await subscription;
+      if (disposed) unlisten();
+      else subscriptions.push(unlisten);
+    }
     try {
       appearance = loadAppearance(
         localStorage,
@@ -142,20 +180,49 @@
         if (disposed) return;
         report = runtime;
         if (runtime) {
-          const unlisten = await onPlayback((snapshot) => {
-            playback = snapshot;
-            if (snapshot.status === 'playing' && snapshot.track?.id !== lastHistoryId) {
-              lastHistoryId = snapshot.track?.id;
-              void refreshLibrary();
-            }
-          });
-          if (disposed) {
-            unlisten();
-            return;
-          }
-          unsubscribe = unlisten;
-          playback = await getPlayback();
-          await Promise.all([refreshLibrary(), setMaterialMode(appearance.reducedTransparency)]);
+          await Promise.all([
+            register(
+              onPlayback((snapshot) => {
+                if (disposed) return;
+                stateRevision.playback++;
+                playback = snapshot;
+                if (snapshot.status === 'playing' && snapshot.track?.id !== lastHistoryId) {
+                  lastHistoryId = snapshot.track?.id;
+                  void refreshLibrary();
+                }
+              }),
+            ),
+            register(
+              onQueue((snapshot) => {
+                if (!disposed) {
+                  stateRevision.queue++;
+                  updateQueue(snapshot);
+                }
+              }),
+            ),
+            register(
+              onSelection((selection) => {
+                if (!disposed) {
+                  stateRevision.selection++;
+                  inspection = selection;
+                }
+              }),
+            ),
+            register(
+              onAccount((snapshot) => {
+                if (!disposed) {
+                  stateRevision.account++;
+                  updateAccount(snapshot);
+                }
+              }),
+            ),
+          ]);
+          if (disposed) return;
+          await Promise.all([
+            refreshSession(),
+            refreshLibrary(),
+            setMaterialMode(appearance.reducedTransparency),
+          ]);
           if (!disposed && view === 'home') void loadHome();
         }
       } catch (failure) {
@@ -167,7 +234,7 @@
     void initialize();
     return () => {
       disposed = true;
-      unsubscribe?.();
+      subscriptions.forEach((unsubscribe) => unsubscribe());
       clearTimeout(searchTimer);
     };
   });
@@ -180,16 +247,102 @@
     }
   }
 
+  async function refreshSession() {
+    const revision = { ...stateRevision };
+    const [transport, upcoming, selection, profile] = await Promise.all([
+      getPlayback(),
+      getQueue(),
+      getSelection(),
+      getAccount(),
+    ]);
+    if (revision.playback === stateRevision.playback) playback = transport;
+    updateQueue(upcoming);
+    if (revision.selection === stateRevision.selection) inspection = selection;
+    if (revision.account === stateRevision.account) updateAccount(profile);
+  }
+
+  function updateAccount(snapshot: AccountSnapshot) {
+    if (snapshot.revision < account.revision) return;
+    const changed = snapshot.revision !== account.revision;
+    account = snapshot;
+    if (changed) {
+      homeRevision++;
+      homeLoading = false;
+      home = null;
+      searchRevision++;
+      results = null;
+      searching = false;
+      loadingMore = false;
+      collectionRevision++;
+      collection = null;
+      collectionLoading = false;
+      if (view === 'collection') view = 'home';
+      if (view === 'home') void loadHome(true);
+      else if (view === 'search' && query.trim().length >= 2) void runSearch();
+    }
+  }
+
+  function updateQueue(snapshot: QueueSnapshot) {
+    if (snapshot.revision >= queue.revision) queue = snapshot;
+  }
+
+  async function accountAction(action: () => Promise<AccountSnapshot>) {
+    if (!report || accountBusy) return;
+    accountBusy = true;
+    const revision = stateRevision.account;
+    try {
+      const snapshot = await action();
+      if (revision === stateRevision.account) updateAccount(snapshot);
+    } catch (failure) {
+      error = errorMessage(failure);
+    } finally {
+      accountBusy = false;
+    }
+  }
+
+  async function queueAction(action: () => Promise<QueueSnapshot>) {
+    if (!report) return;
+    try {
+      const snapshot = await action();
+      updateQueue(snapshot);
+    } catch (failure) {
+      if (!isCancelled(failure)) error = errorMessage(failure);
+    }
+  }
+
+  async function transport(action: () => Promise<PlaybackSelection | null>) {
+    if (!report) return;
+    const revision = ++playbackRevision;
+    pending = null;
+    const selectionRevision = stateRevision.selection;
+    error = null;
+    try {
+      const selection = await action();
+      if (
+        selection &&
+        revision === playbackRevision &&
+        selectionRevision === stateRevision.selection
+      ) {
+        inspection = selection.inspection;
+        playback = selection.playback;
+      }
+    } catch (failure) {
+      if (revision === playbackRevision && !isCancelled(failure)) error = errorMessage(failure);
+    }
+  }
+
   async function loadHome(refresh = false) {
     if (!report || homeLoading) return;
     homeLoading = true;
+    const revision = ++homeRevision;
     homeError = false;
     try {
-      home = await getHomeFeed(refresh);
+      const feed = await getHomeFeed(refresh);
+      if (revision === homeRevision) home = feed;
     } catch (failure) {
-      if (!isCancelled(failure)) homeError = true;
+      if (revision === homeRevision && !isCancelled(failure)) homeError = true;
     } finally {
-      homeLoading = false;
+      if (revision === homeRevision) homeLoading = false;
     }
   }
 
@@ -219,6 +372,7 @@
   function navigate(next: View) {
     view = next;
     settingsOpen = false;
+    accountOpen = false;
     if (next === 'search') searchInput?.focus();
     if (next === 'home' && !home && !homeLoading && report) void loadHome();
     if (next === 'liked' || next === 'recent') void refreshLibrary();
@@ -297,10 +451,12 @@
     }
     const revision = ++playbackRevision;
     pending = track;
-    context = tracks;
     error = null;
     try {
-      const selection = await playSong(track.id);
+      const context = ['collection', 'liked', 'recent'].includes(view)
+        ? tracks.map((track) => track.id)
+        : [];
+      const selection = await playSong(track.id, context);
       if (revision === playbackRevision) {
         inspection = selection.inspection;
         playback = selection.playback;
@@ -383,6 +539,8 @@
     }
     if (event.code === 'Escape') {
       settingsOpen = false;
+      accountOpen = false;
+      queueOpen = false;
       artworkOverlayOpen = false;
       if (pending) void cancel();
     }
@@ -410,7 +568,7 @@
   async function visibility() {
     if (document.visibilityState === 'visible' && report) {
       try {
-        playback = await getPlayback();
+        await refreshSession();
       } catch (failure) {
         error = errorMessage(failure);
       }
@@ -479,10 +637,24 @@
         aria-expanded={settingsOpen}
         onclick={() => {
           settingsOpen = !settingsOpen;
+          accountOpen = false;
+          queueOpen = false;
         }}
         title="Appearance settings"><Settings2 size={17} /><span>Appearance</span></button
       >
-      <div class="session-label"><span></span><span>Guest session</span></div>
+      <button
+        class="session-label"
+        aria-label="Account settings"
+        onclick={() => {
+          accountOpen = !accountOpen;
+          settingsOpen = false;
+          queueOpen = false;
+        }}
+        ><span></span><span
+          >{account.profile?.name ??
+            (account.mode === 'signingIn' ? 'Connecting Google…' : 'Guest session')}</span
+        ></button
+      >
     </div>
   </aside>
 
@@ -524,9 +696,19 @@
             }}><X size={13} /></button
           >{:else}<kbd>⌘ K</kbd>{/if}
       </form>
-      <div class="guest-avatar" title="Listening without an account" aria-label="Guest session">
-        G
-      </div>
+      <button
+        class="guest-avatar"
+        title={account.profile?.name ?? 'Listening without an account'}
+        aria-label="Open account settings"
+        aria-expanded={accountOpen}
+        onclick={() => {
+          accountOpen = !accountOpen;
+          settingsOpen = false;
+          queueOpen = false;
+        }}
+      >
+        {account.profile?.name.slice(0, 1).toUpperCase() ?? 'G'}
+      </button>
     </header>
 
     <main class="content-scroll" id="main-content">
@@ -717,7 +899,7 @@
     <NowPlayingPanel
       track={shownTrack}
       {playback}
-      loading={Boolean(pending && !playback.track)}
+      loading={Boolean(loadingTrack)}
       liked={likedIds.has(shownTrack.id)}
       onclose={closeArtwork}
       onlike={() => void like(shownTrack)}
@@ -726,12 +908,14 @@
 
   <PlayerBar
     {playback}
-    {pending}
+    pending={loadingTrack}
     {inspection}
     {busy}
     liked={Boolean(playback.track && likedIds.has(playback.track.id))}
-    canPrevious={currentIndex > 0}
-    canNext={currentIndex >= 0 && currentIndex < context.length - 1}
+    transitioning={queue.transitioning}
+    canPrevious={currentIndex >= 0}
+    canNext={currentIndex >= 0 &&
+      (currentIndex < queue.tracks.length - 1 || (queue.autoplay && queue.running))}
     onpause={() => void control(() => setPaused(playback.status !== 'paused'))}
     onseek={(position) => control(() => seekTrack(position))}
     onvolume={volume}
@@ -740,19 +924,20 @@
       void control(stopPlayback);
     }}
     oncancel={() => void cancel()}
-    onprevious={() => {
-      if (currentIndex > 0) void select(context[currentIndex - 1], context);
-    }}
-    onnext={() => {
-      if (currentIndex >= 0 && currentIndex < context.length - 1)
-        void select(context[currentIndex + 1], context);
-    }}
+    onprevious={() => void transport(previousSong)}
+    onnext={() => void transport(nextSong)}
     onlike={() => {
       if (playback.track) void like(playback.track);
     }}
     onquality={(id) => void quality(id)}
     onartwork={toggleArtwork}
     {artworkVisible}
+    {queueOpen}
+    onqueue={() => {
+      queueOpen = !queueOpen;
+      accountOpen = false;
+      settingsOpen = false;
+    }}
   />
 
   {#if settingsOpen}<AppearancePanel
@@ -766,6 +951,34 @@
         void updateAppearance(
           defaultAppearance(matchMedia('(prefers-reduced-transparency: reduce)').matches),
         );
+      }}
+    />{/if}
+  {#if queueOpen}<QueuePanel
+      {queue}
+      onclose={() => {
+        queueOpen = false;
+      }}
+      onjump={(index, videoId) => void transport(() => jumpQueue(index, videoId))}
+      onremove={(index, videoId) => void queueAction(() => removeQueue(index, videoId))}
+      onclear={() => {
+        void cancel();
+        void queueAction(clearQueue);
+      }}
+      onautoplay={(enabled) => void queueAction(() => setAutoplay(enabled))}
+      onretry={() => void queueAction(retryRadio)}
+    />{/if}
+  {#if accountOpen}<AccountPanel
+      {account}
+      available={Boolean(report)}
+      busy={accountBusy}
+      onclose={() => {
+        accountOpen = false;
+      }}
+      onconnect={() => void accountAction(connectGoogle)}
+      oncancel={() => void accountAction(cancelGoogle)}
+      onsignout={() => {
+        void cancel();
+        void accountAction(signOut);
       }}
     />{/if}
 </div>

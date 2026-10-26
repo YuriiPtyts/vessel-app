@@ -303,3 +303,126 @@ test('clear glass upgrades the previous default tint and preserves layout choice
     await page.evaluate(() => JSON.parse(localStorage.getItem('vessel:appearance:v2')).version),
   ).toBe(2);
 });
+
+test('radio queue and transport follow native events without renderer-driven autoplay', async ({
+  page,
+}) => {
+  await nativeFixture(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
+  const player = page.getByRole('region', { name: 'Music player' });
+  await page.getByRole('button', { name: 'Show play queue' }).click();
+  const queue = page.getByRole('region', { name: 'Play queue', exact: true });
+  await expect(queue.getByRole('switch', { name: /Autoplay radio/ })).toBeChecked();
+  await expect(
+    queue.getByRole('button', { name: 'Play queued Da Funk', exact: true }),
+  ).toBeEnabled();
+  expect(
+    await page.evaluate(
+      () => window.__vesselCalls.find((call) => call.command === 'play_song').args.context,
+    ),
+  ).toEqual([]);
+  // This simulates a Rust-owned end-of-track update. The renderer must not issue play_song.
+  await page.evaluate(() => window.__vesselAdvanceRadio());
+  await expect(player.getByRole('heading', { name: 'Da Funk', exact: true })).toBeVisible();
+  await expect(
+    queue.getByRole('button', { name: 'Play queued Da Funk', exact: true }),
+  ).toHaveAttribute('aria-current', 'true');
+  await page.evaluate(() =>
+    window.__vesselEmitQueue({ revision: 0, tracks: [], currentIndex: null }),
+  );
+  await expect(
+    queue.getByRole('button', { name: 'Play queued Da Funk', exact: true }),
+  ).toHaveAttribute('aria-current', 'true');
+  expect(
+    await page.evaluate(
+      () => window.__vesselCalls.filter((call) => call.command === 'play_song').length,
+    ),
+  ).toBe(1);
+  await queue.getByRole('button', { name: 'Remove Around the World from queue' }).click();
+  await expect(
+    queue.getByRole('button', { name: 'Play queued Around the World', exact: true }),
+  ).toHaveCount(0);
+  await queue.getByRole('switch', { name: /Autoplay radio/ }).click();
+  await expect(queue.getByRole('switch', { name: /Autoplay radio/ })).not.toBeChecked();
+  await queue.getByRole('button', { name: 'Close play queue' }).click();
+  await page.getByRole('button', { name: 'Next song', exact: true }).click();
+  await expect(
+    player.getByRole('heading', { name: 'Harder, Better, Faster, Stronger', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Audio quality', exact: true }).click();
+  await page.getByRole('button', { name: /AAC · ≈128 kbps/ }).click();
+  expect(
+    await page.evaluate(
+      () => window.__vesselCalls.find((call) => call.command === 'play_track').args.trackId,
+    ),
+  ).toBe('LxgnIhjQFuE');
+  await page.getByRole('button', { name: 'Close quality options' }).click();
+  await page.getByRole('button', { name: 'Previous song', exact: true }).click();
+  await expect(player.getByRole('heading', { name: 'Da Funk', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show play queue' }).click();
+  await queue.getByRole('button', { name: 'Clear queue', exact: true }).click();
+  await expect(queue.getByText('Start with a song.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Next song', exact: true })).toBeDisabled();
+});
+
+test('Google connection requires a verified account event and sign-out preserves local likes', async ({
+  page,
+}) => {
+  await nativeFixture(page);
+  await page.goto('/');
+  await page.getByRole('searchbox', { name: 'Search music' }).fill('Daft Punk');
+  await page.getByRole('searchbox', { name: 'Search music' }).press('Enter');
+  await page.getByRole('button', { name: 'Save Instant Crush', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen now', exact: true }).click();
+  await page.getByRole('button', { name: 'Open account settings' }).click();
+  const account = page.getByRole('region', { name: 'Google account', exact: true });
+  await account.getByRole('button', { name: 'Connect Google', exact: true }).click();
+  await expect(
+    account.getByText('Finish signing in in the Google window.', { exact: true }),
+  ).toBeVisible();
+  await expect(account.getByText('Fixture Listener', { exact: true })).toHaveCount(0);
+  await account.getByRole('button', { name: 'Cancel sign-in', exact: true }).click();
+  await expect(account.getByRole('button', { name: 'Connect Google', exact: true })).toBeEnabled();
+  await account.getByRole('button', { name: 'Connect Google', exact: true }).click();
+  await page.evaluate(() => window.__vesselCompleteSignIn());
+  await expect(account.getByText('Fixture Listener', { exact: true })).toBeVisible();
+  await expect(page.getByText('Your feed', { exact: true })).toBeVisible();
+  await page.evaluate(() => window.__vesselExpireAccount());
+  await expect(
+    account.getByRole('button', { name: 'Reconnect Google', exact: true }),
+  ).toBeEnabled();
+  await account.getByRole('button', { name: 'Reconnect Google', exact: true }).click();
+  await page.evaluate(() => window.__vesselCompleteSignIn());
+  await account.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(account.getByText('Listening as a guest', { exact: true })).toBeVisible();
+  await expect(page.getByText('Guest recommendations', { exact: true })).toBeVisible();
+  await account.getByRole('button', { name: 'Close account settings' }).click();
+  await page.getByRole('button', { name: 'Liked songs', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'Play Instant Crush', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
+});
+
+test('a declined Google sign-in keeps guest listening available at narrow widths', async ({
+  page,
+}) => {
+  await nativeFixture(page, { googleRejected: true });
+  await page.setViewportSize({ width: 420, height: 800 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open account settings' }).click();
+  const account = page.getByRole('region', { name: 'Google account', exact: true });
+  await account.getByRole('button', { name: 'Connect Google', exact: true }).click();
+  await expect(account.getByText(/Google declined sign-in in this window/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('account-narrow.png'), fullPage: true });
+  await account.getByRole('button', { name: 'Close account settings' }).click();
+  await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Show play queue' }).click();
+  await expect(page.getByRole('region', { name: 'Play queue', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('queue-narrow.png'), fullPage: true });
+});

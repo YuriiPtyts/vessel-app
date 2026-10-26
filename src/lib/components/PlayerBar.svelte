@@ -4,6 +4,7 @@
     ChevronUp,
     Heart,
     LoaderCircle,
+    ListMusic,
     Pause,
     Play,
     SkipBack,
@@ -27,6 +28,7 @@
     pending,
     inspection,
     busy,
+    transitioning,
     liked,
     canPrevious,
     canNext,
@@ -41,11 +43,14 @@
     onquality,
     onartwork,
     artworkVisible,
+    queueOpen,
+    onqueue,
   }: {
     playback: PlaybackSnapshot;
     pending: Track | null;
     inspection: TrackInspection | null;
     busy: boolean;
+    transitioning: boolean;
     liked: boolean;
     canPrevious: boolean;
     canNext: boolean;
@@ -60,6 +65,8 @@
     onquality: (id: string) => void;
     onartwork: () => void;
     artworkVisible: boolean;
+    queueOpen: boolean;
+    onqueue: () => void;
   } = $props();
   let seekDraft = $state<number | null>(null);
   let volumeDraft = $state<number | null>(null);
@@ -68,9 +75,9 @@
   let volumePointerDown = $state(false);
   let volumeKeyDown = $state(false);
   const active = $derived(['playing', 'paused', 'buffering'].includes(playback.status));
-  const shown = $derived(playback.track ?? pending);
+  const shown = $derived(pending ?? playback.track);
   const qualityReady = $derived(
-    inspection && inspection.track.id === playback.track?.id && !pending,
+    inspection && inspection.track.id === playback.track?.id && !pending && !transitioning,
   );
 
   async function seek(value: number) {
@@ -122,8 +129,9 @@
     <div class="now-playing-copy">
       <h2>{shown?.title ?? 'A little space for your music'}</h2>
       <p>
-        {playback.track?.artist ??
-          (pending ? 'Getting your song ready…' : 'Find something you love')}
+        {pending
+          ? 'Getting your song ready…'
+          : (playback.track?.artist ?? 'Find something you love')}
       </p>
     </div>
     <button
@@ -139,9 +147,9 @@
     <div class="transport-controls">
       <button
         class="icon-button"
-        aria-label="Previous in these results"
-        title="Previous in these results"
-        disabled={!canPrevious || busy}
+        aria-label="Previous song"
+        title="Previous song · restart after 3 seconds"
+        disabled={!canPrevious || busy || transitioning}
         onclick={onprevious}><SkipBack size={17} fill="currentColor" /></button
       >
       <button
@@ -149,10 +157,10 @@
         aria-label={playback.status === 'playing' || playback.status === 'buffering'
           ? 'Pause playback'
           : 'Resume playback'}
-        disabled={!active || busy}
+        disabled={!active || busy || transitioning}
         onclick={onpause}
       >
-        {#if playback.status === 'loading' || (pending && !playback.track)}<LoaderCircle
+        {#if playback.status === 'loading' || pending || transitioning}<LoaderCircle
             size={20}
             class="spin"
           />
@@ -164,9 +172,9 @@
       </button>
       <button
         class="icon-button"
-        aria-label="Next in these results"
-        title="Next in these results"
-        disabled={!canNext || busy}
+        aria-label="Next song"
+        title="Next song"
+        disabled={!canNext || busy || transitioning}
         onclick={onnext}><SkipForward size={17} fill="currentColor" /></button
       >
     </div>
@@ -179,7 +187,7 @@
         step="0.1"
         value={seekDraft ?? playback.positionSeconds}
         style:--range-progress={`${Math.min(100, Math.max(0, ((seekDraft ?? playback.positionSeconds) / (playback.durationSeconds || 1)) * 100))}%`}
-        disabled={!active || !playback.durationSeconds || busy}
+        disabled={!active || !playback.durationSeconds || busy || transitioning}
         oninput={(event) => {
           seekDraft = event.currentTarget.valueAsNumber;
         }}
@@ -259,9 +267,17 @@
       {/if}
     </div>
     <button
+      class="icon-button queue-trigger"
+      class:selected={queueOpen}
+      aria-label="Show play queue"
+      aria-expanded={queueOpen}
+      title="Up next and autoplay radio"
+      onclick={onqueue}><ListMusic size={17} /></button
+    >
+    <button
       class="icon-button stop-button"
       aria-label="Stop playback"
-      disabled={!playback.track || busy}
+      disabled={(!playback.track && !pending) || busy}
       onclick={onstop}><Square size={13} /></button
     >
   </div>

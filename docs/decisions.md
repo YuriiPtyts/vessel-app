@@ -18,6 +18,14 @@ The owner also asked for substantially faster songs and stronger real-desktop tr
 
 ## Confirmed
 
+### Radio and optional Google connection
+
+The owner requested automatic next-song generation like YouTube Music and Google sign-in. Use real provider radio recommendations and a Rust-owned queue/EOF transition, so playback continues independently of renderer visibility. Search/discovery seed radio; loaded collections/local lists retain their order before recommendations. Queue metadata and autoplay persist, without starting playback automatically on launch.
+
+Google connection is optional. Use Google's own sign-in page in an isolated nonpersistent native window, verify the resulting YouTube account session, and store only its scoped session in Keychain. Connection failure keeps guest listening available; sign-out retains local music and appearance. Do not label a page load or arbitrary cookies as a successful account connection. Full Google/2FA/real-account acceptance is a separate hands-on verification gate, documented in radio-and-accounts.md.
+
+### Product constraints
+
 1. Polish macOS first. Add other operating systems in future milestones.
 2. Prioritize account support early, while preserving an explicit guest listening path. Account failure or sign-out must not erase the local queue or disable otherwise available guest capabilities.
 3. Reliable audio-only playback, seeking, editable queues, and media keys form the playback baseline. libmpv is the provisional engine, not a completed feasibility decision.

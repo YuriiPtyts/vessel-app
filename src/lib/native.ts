@@ -70,12 +70,54 @@ export interface TrackInspection {
   track: Track;
   formats: AudioFormat[];
   recommendedFormatId: string;
+  accountSource: boolean;
 }
+
+export interface QueueSnapshot {
+  revision: number;
+  tracks: Track[];
+  currentIndex: number | null;
+  autoplay: boolean;
+  running: boolean;
+  generating: boolean;
+  transitioning: boolean;
+  preparingId: string | null;
+  seedTitle: string | null;
+  error: AppError | null;
+}
+
+export interface AccountSnapshot {
+  mode: 'guest' | 'checking' | 'signingIn' | 'connected' | 'expired' | 'unavailable';
+  profile: { name: string; email: string | null; pictureUrl: string | null } | null;
+  error: AppError | null;
+  revision: number;
+}
+
+export const emptyQueue: QueueSnapshot = {
+  revision: 0,
+  tracks: [],
+  currentIndex: null,
+  autoplay: true,
+  running: false,
+  generating: false,
+  transitioning: false,
+  preparingId: null,
+  seedTitle: null,
+  error: null,
+};
+export const guestAccount: AccountSnapshot = {
+  mode: 'guest',
+  profile: null,
+  error: null,
+  revision: 0,
+};
 
 export type PlaybackStatus =
   'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'ended' | 'failed';
 
 export interface PlaybackSnapshot {
+  playbackId: number;
+  accountSource: boolean;
   status: PlaybackStatus;
   track: Track | null;
   activeFormat: AudioFormat | null;
@@ -88,6 +130,8 @@ export interface PlaybackSnapshot {
 }
 
 export const emptyPlayback: PlaybackSnapshot = {
+  playbackId: 0,
+  accountSource: false,
   status: 'idle',
   track: null,
   activeFormat: null,
@@ -110,7 +154,8 @@ export const searchMusic = (query: string, kind: SearchKind = 'songs', more = fa
 export const getHomeFeed = (refresh = false) => invoke<HomeFeed>('home_feed', { refresh });
 export const browseCollection = (id: string, more = false) =>
   invoke<CollectionPage>('browse_collection', { id, more });
-export const playSong = (videoId: string) => invoke<PlaybackSelection>('play_song', { videoId });
+export const playSong = (videoId: string, context: string[] = []) =>
+  invoke<PlaybackSelection>('play_song', { videoId, context });
 export const getLibrary = () => invoke<LocalLibrary>('local_library');
 export const toggleLike = (videoId: string) => invoke<LocalLibrary>('toggle_like', { videoId });
 export const setMaterialMode = (reduced: boolean) => invoke<void>('set_material_mode', { reduced });
@@ -124,6 +169,27 @@ export const setVolume = (volume: number) => invoke<PlaybackSnapshot>('set_volum
 export const stopPlayback = () => invoke<PlaybackSnapshot>('stop_playback');
 export const onPlayback = (callback: (snapshot: PlaybackSnapshot) => void) =>
   listen<PlaybackSnapshot>('playback-state', ({ payload }) => callback(payload));
+export const getQueue = () => invoke<QueueSnapshot>('queue_snapshot');
+export const getSelection = () => invoke<TrackInspection | null>('selection_snapshot');
+export const getAccount = () => invoke<AccountSnapshot>('account_snapshot');
+export const nextSong = () => invoke<PlaybackSelection | null>('next_song');
+export const previousSong = () => invoke<PlaybackSelection | null>('previous_song');
+export const jumpQueue = (index: number, videoId: string) =>
+  invoke<PlaybackSelection>('jump_queue', { index, videoId });
+export const removeQueue = (index: number, videoId: string) =>
+  invoke<QueueSnapshot>('remove_queue', { index, videoId });
+export const clearQueue = () => invoke<QueueSnapshot>('clear_queue');
+export const setAutoplay = (enabled: boolean) => invoke<QueueSnapshot>('set_autoplay', { enabled });
+export const retryRadio = () => invoke<QueueSnapshot>('retry_radio');
+export const connectGoogle = () => invoke<AccountSnapshot>('connect_google');
+export const cancelGoogle = () => invoke<AccountSnapshot>('cancel_google');
+export const signOut = () => invoke<AccountSnapshot>('sign_out');
+export const onQueue = (callback: (snapshot: QueueSnapshot) => void) =>
+  listen<QueueSnapshot>('queue-state', ({ payload }) => callback(payload));
+export const onSelection = (callback: (inspection: TrackInspection | null) => void) =>
+  listen<TrackInspection | null>('selection-state', ({ payload }) => callback(payload));
+export const onAccount = (callback: (snapshot: AccountSnapshot) => void) =>
+  listen<AccountSnapshot>('account-state', ({ payload }) => callback(payload));
 
 export function errorMessage(error: unknown): string {
   if (

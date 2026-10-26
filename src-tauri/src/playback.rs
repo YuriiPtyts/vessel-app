@@ -9,7 +9,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 use crate::{
     error::{AppError, Result},
@@ -33,6 +33,8 @@ pub enum PlaybackStatus {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackSnapshot {
+    pub playback_id: u64,
+    pub account_source: bool,
     pub status: PlaybackStatus,
     pub track: Option<Track>,
     pub active_format: Option<AudioFormat>,
@@ -47,6 +49,8 @@ pub struct PlaybackSnapshot {
 impl Default for PlaybackSnapshot {
     fn default() -> Self {
         Self {
+            playback_id: 0,
+            account_source: false,
             status: PlaybackStatus::Idle,
             track: None,
             active_format: None,
@@ -74,6 +78,8 @@ struct LoadRequest {
     track: Track,
     format: AudioFormat,
     source: StreamSource,
+    cancellation: watch::Receiver<u64>,
+    generation: u64,
 }
 
 struct Request {
@@ -130,11 +136,15 @@ impl Player {
         track: Track,
         format: AudioFormat,
         source: StreamSource,
+        cancellation: watch::Receiver<u64>,
+        generation: u64,
     ) -> Result<PlaybackSnapshot> {
         self.request(Operation::Load(Box::new(LoadRequest {
             track,
             format,
             source,
+            cancellation,
+            generation,
         })))
         .await
     }
@@ -200,6 +210,7 @@ fn worker(
 ) {
     let mut engine: Option<Mpv> = None;
     let mut snapshot = PlaybackSnapshot::default();
+    let mut next_playback_id = 0_u64;
     while !stopping.load(Ordering::Relaxed) {
         let active = matches!(
             snapshot.status,
@@ -220,8 +231,16 @@ fn worker(
                 ..
             }) => break,
             Ok(request) => {
-                let result = apply(request.operation, &paths, &mut engine, &mut snapshot);
-                if let Err(error) = &result {
+                let result = apply(
+                    request.operation,
+                    &paths,
+                    &mut engine,
+                    &mut snapshot,
+                    &mut next_playback_id,
+                );
+                if let Err(error) = &result
+                    && error.code != "cancelled"
+                {
                     snapshot.error = Some(error.clone());
                     if snapshot.status == PlaybackStatus::Loading {
                         snapshot.status = PlaybackStatus::Failed;
@@ -250,6 +269,7 @@ fn apply(
     paths: &RuntimePaths,
     engine: &mut Option<Mpv>,
     snapshot: &mut PlaybackSnapshot,
+    next_playback_id: &mut u64,
 ) -> Result<()> {
     match operation {
         Operation::WarmUp => {
@@ -262,9 +282,17 @@ fn apply(
                 track,
                 format,
                 source,
+                cancellation,
+                generation,
             } = *request;
+            if *cancellation.borrow() != generation {
+                return Err(AppError::cancelled());
+            }
             if engine.is_none() {
                 *engine = Some(Mpv::open(paths)?);
+            }
+            if *cancellation.borrow() != generation {
+                return Err(AppError::cancelled());
             }
             let same_track = snapshot
                 .track
@@ -280,6 +308,10 @@ fn apply(
                 0.0
             };
             let paused = same_track && snapshot.status == PlaybackStatus::Paused;
+            if !same_track {
+                *next_playback_id = next_playback_id.wrapping_add(1);
+                snapshot.playback_id = *next_playback_id;
+            }
             snapshot.status = PlaybackStatus::Loading;
             snapshot.error = None;
             engine.as_ref().ok_or_else(AppError::internal)?.load(
@@ -291,6 +323,7 @@ fn apply(
             snapshot.duration_seconds = track.duration_seconds;
             snapshot.track = Some(track);
             snapshot.active_format = Some(format);
+            snapshot.account_source = source.account_source;
             snapshot.position_seconds = position;
             snapshot.decoded_sample_rate_hz = None;
         }
@@ -327,6 +360,7 @@ fn apply(
         Operation::Stop => {
             if let Some(engine) = engine.as_ref() {
                 engine.run(&["stop"])?;
+                engine.set("http-header-fields", "")?;
             }
             let volume = snapshot.volume;
             *snapshot = PlaybackSnapshot {

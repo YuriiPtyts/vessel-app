@@ -97,3 +97,69 @@ pub const PROBE_SCRIPT: &str = r#"(() => {
     }}).catch(() => {});
   }, 3500);
 })()"#;
+
+/// Opens and cancels the real Google window without entering credentials or exporting cookies.
+pub async fn sign_in_smoke(handle: tauri::AppHandle) {
+    use std::{sync::Arc, time::Duration};
+    use vessel_app::{application::Application, sign_in::SignIn};
+    let Some(destination) = std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS") else {
+        return;
+    };
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let app = handle.state::<Arc<Application>>().inner().clone();
+    let controller = handle.state::<Arc<SignIn>>().inner().clone();
+    let before = app.account();
+    let library = app.library().ok();
+    let mut report = json!({"opened": false, "privateStore": null, "googleOrigin": false, "cookiesReadable": false});
+    if controller.start(handle.clone(), app.clone()).await.is_ok() {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        if let Some(window) = handle.get_webview_window("google-sign-in") {
+            report["opened"] = json!(true);
+            report["googleOrigin"] = json!(window.url().is_ok_and(
+                |url| url.scheme() == "https" && url.host_str() == Some("accounts.google.com")
+            ));
+            let (send, receive) = tokio::sync::oneshot::channel();
+            let _ = window.with_webview(move |platform| {
+                // SAFETY: Tauri runs this closure on the main thread with a live WKWebView.
+                // Only its configuration's persistence flag is read; no page content is read.
+                let persistent = unsafe {
+                    let view = platform.inner().cast::<objc2::runtime::AnyObject>();
+                    let config: *mut objc2::runtime::AnyObject =
+                        objc2::msg_send![view, configuration];
+                    let store: *mut objc2::runtime::AnyObject =
+                        objc2::msg_send![config, websiteDataStore];
+                    let value: objc2::runtime::Bool = objc2::msg_send![store, isPersistent];
+                    value.as_bool()
+                };
+                let _ = send.send(!persistent);
+            });
+            report["privateStore"] = json!(receive.await.ok());
+            report["cookiesReadable"] = json!(
+                tokio::task::spawn_blocking(move || window.cookies().is_ok())
+                    .await
+                    .unwrap_or(false)
+            );
+        }
+    }
+    let _ = controller.cancel(&handle, &app).await;
+    for _ in 0..40 {
+        if handle.get_webview_window("google-sign-in").is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    report["windowClosed"] = json!(handle.get_webview_window("google-sign-in").is_none());
+    report["accountRestored"] =
+        json!(app.account().mode == before.mode && app.account().revision == before.revision);
+    report["localLibraryUnchanged"] = json!(
+        app.library()
+            .ok()
+            .and_then(|value| serde_json::to_value(value).ok())
+            == library.and_then(|value| serde_json::to_value(value).ok())
+    );
+    // This is an opt-in diagnostic result, containing no profile or cookie values.
+    if let Ok(bytes) = serde_json::to_vec_pretty(&report) {
+        let _ = std::fs::write(destination, bytes);
+    }
+    handle.exit(0);
+}

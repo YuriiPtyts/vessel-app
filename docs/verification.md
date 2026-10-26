@@ -120,6 +120,26 @@ The app now has a single complete default palette, four palette accent choices, 
 
 These are real native/provider checks plus explicitly mocked WebKit UI checks, not a broad p95, acoustic-quality, compositor-energy, clean-machine, or minimum-OS certification. A foreground desktop pixel comparison was not reliable in this execution environment; the actual AppKit/WebKit material contract was verified instead. See startup-and-materials.md for methods, first-use/fallback limits, and reproduction commands. Full resource budgets and OS-interaction QA remain open.
 
+## Radio queue and optional Google connection milestone
+
+### Verified
+
+- Real YouTube Music radio returned **50 initial tracks** and **49 new continuation tracks**. Radio requests are separate from the latest-wins catalog/browse lane.
+- The real Rust application, without a renderer, generated a 50-track queue and advanced once at native EOF. Against the final `.app` runtime with `PATH=/usr/bin:/bin`, next-source preparation took **1.63 seconds** and EOF-to-next-decoded-output took **357 ms**. An earlier development run observed **353 ms**. Stop left playback idle and retained the queue. CoreAudio output was muted; this does not establish gapless or acoustic handoff behavior.
+- Final packaged-runtime regressions passed: search selection to decoded output **4.24 seconds**, cached repeat **0.89 seconds**, separate guest Opus playback **3.33 seconds**; pause/seek, paused AAC switching, resume/stop, and resolver cancellation remain green. These are individual host/network observations, not p95 guarantees.
+- Guest Home returned real shelves and a recommended RELEASED collection containing **67 tracks** in the final run. Search returned 20 songs, continued to 38 unique results, and returned 20 music-video results.
+- **27 ordinary library unit tests**, one native-binary IPC-origin unit test, and one non-network application integration check pass. Coverage includes exactly-once EOF, stopped/disabled-radio behavior, late-account generations, bounded collection order, stale rendered queue-entry identity, queue round-trip/corruption preservation, secret-free public state, stale restore/expiry rejection, and cancellation during a simulated OS vault write with rollback.
+- **13 WebKit interface-contract tests** pass. New checks cover Rust-driven queue/selection updates, source-quality refresh, stale queue snapshots, next/previous/remove/clear/autoplay controls, connect/cancel/expiry/sign-out, local likes surviving sign-out, and narrow account/queue layouts. Account/IPC responses in these checks are mocked.
+- A real native Google-window smoke run passed `scripts/check-native-sign-in.mjs`: private/nonpersistent WKWebsiteDataStore, Google HTTPS origin, Rust cookie API access, cancel/close cleanup, original account revision, and local collection preservation. No account credentials were entered or saved by this check.
+- Native material diagnostics still passed: clear NSWindow background, non-opaque WebView, native clear glass, 18% tint, mounted frontend/player, and three live provider shelves. Native libmpv volume readback passed.
+- Svelte diagnostics, production frontend, Rust fmt, Clippy with warnings denied (default and `native-diagnostics`), ordinary tests, and normal `npm run tauri -- build --bundles app` pass. Final installed bundle: **198.61 MiB**. The final app ran for eight seconds with system-only PATH and quit normally (`exit 0`); captured output consisted only of macOS notices for the test's OS-persistence flags.
+
+### Account interpretation
+
+The isolated native sign-in window, Rust-only session/vault implementation, account request context, and frontend account controls are implemented. **Real Google password/2FA acceptance, authenticated account-menu verification, a real session's Keychain save/restore/delete, personalized recommendations, and account-required/Premium playback have not been live-verified.** Google can refuse embedded sign-in. A page load or arbitrary cookies never mark the account Connected. See radio-and-accounts.md for the owner flow and reproduction commands.
+
+Local likes/history are still local, not synchronized account library data. Automatic stream renewal/recovery, gapless, media keys, full resource/energy budgets, broader account/region matrices, minimum-OS testing, and distribution gates remain open.
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.

@@ -1,7 +1,7 @@
-//! Guest YouTube Music catalog. Volatile response parsing is isolated from playback.
+//! Guest/account YouTube Music catalog. Volatile response parsing stays out of playback.
 use std::{
     collections::{BTreeSet, VecDeque},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tokio::sync::{Semaphore, watch};
 
 use crate::{
+    account::{Account, AccountProfile, CookieSession, MemoryVault, parse_profile, session_error},
     error::{AppError, Result},
     home::{self, CollectionPage, CollectionTarget, HomeFeed},
     provider::{Track, artwork_url},
@@ -47,20 +48,24 @@ pub struct SearchResults {
 struct Session {
     context: Value,
     created: Instant,
+    revision: u64,
 }
 struct CachedSearch {
     results: SearchResults,
     continuation: Option<String>,
     created: Instant,
+    revision: u64,
 }
 struct CachedHome {
     feed: HomeFeed,
     targets: std::collections::BTreeMap<String, CollectionTarget>,
     created: Instant,
+    revision: u64,
 }
 struct CachedCollection {
     page: CollectionPage,
     continuation: Option<String>,
+    revision: u64,
 }
 
 pub struct MusicCatalog {
@@ -72,10 +77,16 @@ pub struct MusicCatalog {
     cancellation: watch::Sender<u64>,
     home: Mutex<Option<CachedHome>>,
     collection: Mutex<Option<CachedCollection>>,
+    account: Arc<Account>,
+    radio_slot: Semaphore,
 }
 
 impl MusicCatalog {
     pub fn new() -> Result<Self> {
+        Self::with_account(Account::new(Arc::new(MemoryVault::default())))
+    }
+
+    pub(crate) fn with_account(account: Arc<Account>) -> Result<Self> {
         let client = Client::builder()
             .user_agent(USER_AGENT)
             .https_only(true)
@@ -94,12 +105,33 @@ impl MusicCatalog {
             cancellation,
             home: Mutex::new(None),
             collection: Mutex::new(None),
+            account,
+            radio_slot: Semaphore::new(1),
         })
     }
 
     pub fn cancel(&self) {
         self.cancellation
             .send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+
+    pub(crate) fn invalidate(&self) {
+        self.cancel();
+        if let Ok(mut value) = self.session.lock() {
+            *value = None;
+        }
+        if let Ok(mut value) = self.cache.lock() {
+            *value = None;
+        }
+        if let Ok(mut value) = self.home.lock() {
+            *value = None;
+        }
+        if let Ok(mut value) = self.collection.lock() {
+            *value = None;
+        }
+        if let Ok(mut value) = self.known_tracks.lock() {
+            value.clear();
+        }
     }
 
     pub fn find_track(&self, id: &str) -> Option<Track> {
@@ -148,18 +180,23 @@ impl MusicCatalog {
                 .lock()
                 .map_err(|_| AppError::internal())?
                 .as_ref()
-                .filter(|cache| cache.created.elapsed() < Duration::from_secs(300))
+                .filter(|cache| {
+                    cache.created.elapsed() < Duration::from_secs(300)
+                        && cache.revision == self.account.snapshot().revision
+                })
         {
             return Ok(cached.feed.clone());
         }
-        let context = self.context().await?;
+        let (context, revision) = self.context().await?;
         let data = self
             .browse_request(
                 json!({"context": context, "browseId": "FEmusic_home"}),
                 None,
+                revision,
             )
             .await?;
-        let (feed, targets) = home::parse_home(&data)?;
+        let (mut feed, targets) = home::parse_home(&data)?;
+        feed.personalized = self.account.request_session().1.is_some();
         let tracks: Vec<_> = feed
             .shelves
             .iter()
@@ -171,6 +208,7 @@ impl MusicCatalog {
             feed: feed.clone(),
             targets,
             created: Instant::now(),
+            revision,
         });
         Ok(feed)
     }
@@ -181,6 +219,7 @@ impl MusicCatalog {
             .lock()
             .map_err(|_| AppError::internal())?
             .as_ref()
+            .filter(|cache| cache.revision == self.account.snapshot().revision)
             .and_then(|cache| cache.targets.get(id))
             .cloned()
             .ok_or_else(|| {
@@ -210,7 +249,10 @@ impl MusicCatalog {
             let cache = self.collection.lock().map_err(|_| AppError::internal())?;
             let cache = cache
                 .as_ref()
-                .filter(|cache| cache.page.item.id == target.item.id)
+                .filter(|cache| {
+                    cache.page.item.id == target.item.id
+                        && cache.revision == self.account.snapshot().revision
+                })
                 .ok_or_else(|| {
                     AppError::new(
                         "stale_collection",
@@ -225,7 +267,7 @@ impl MusicCatalog {
         } else {
             (Vec::new(), None)
         };
-        let context = self.context().await?;
+        let (context, revision) = self.context().await?;
         let mut body = json!({"context":context, "browseId":target.item.id});
         if let Some(params) = &target.params {
             body["params"] = json!(params);
@@ -233,7 +275,9 @@ impl MusicCatalog {
         if let Some(token) = &continuation {
             body["continuation"] = json!(token);
         }
-        let data = self.browse_request(body, continuation.as_deref()).await?;
+        let data = self
+            .browse_request(body, continuation.as_deref(), revision)
+            .await?;
         let (mut page, continuation) = home::parse_collection(&data, &target)?;
         let mut tracks = previous;
         let mut ids: BTreeSet<_> = tracks.iter().map(|track| track.id.clone()).collect();
@@ -249,11 +293,17 @@ impl MusicCatalog {
         *self.collection.lock().map_err(|_| AppError::internal())? = Some(CachedCollection {
             page: page.clone(),
             continuation,
+            revision,
         });
         Ok(page)
     }
 
-    async fn browse_request(&self, body: Value, continuation: Option<&str>) -> Result<Value> {
+    async fn browse_request(
+        &self,
+        body: Value,
+        continuation: Option<&str>,
+        revision: u64,
+    ) -> Result<Value> {
         let mut endpoint =
             url::Url::parse(&format!("{ORIGIN}/youtubei/v1/browse?prettyPrint=false"))
                 .map_err(|_| catalog_error())?;
@@ -267,23 +317,20 @@ impl MusicCatalog {
             .pointer("/context/client/clientVersion")
             .and_then(Value::as_str)
             .ok_or_else(catalog_error)?;
-        let response = self
+        let request = self
             .client
             .post(endpoint)
             .header("Origin", ORIGIN)
             .header("Referer", format!("{ORIGIN}/"))
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
-            .json(&body)
+            .json(&body);
+        let response = self
+            .authenticate(request, revision)?
             .send()
             .await
             .map_err(|_| catalog_error())?;
-        let data: Value = serde_json::from_slice(&bounded_body(response, 4 * 1024 * 1024).await?)
-            .map_err(|_| catalog_error())?;
-        if data.get("error").is_some() {
-            return Err(catalog_error());
-        }
-        Ok(data)
+        self.response(response, revision).await
     }
 
     fn remember(&self, tracks: &[Track]) -> Result<()> {
@@ -309,9 +356,11 @@ impl MusicCatalog {
             .map_err(|_| AppError::internal())?;
         let (previous, continuation) = {
             let cache = self.cache.lock().map_err(|_| AppError::internal())?;
-            let matching = cache
-                .as_ref()
-                .filter(|cache| cache.results.query == query && cache.results.kind == kind);
+            let matching = cache.as_ref().filter(|cache| {
+                cache.results.query == query
+                    && cache.results.kind == kind
+                    && cache.revision == self.account.snapshot().revision
+            });
             if !more
                 && let Some(cache) =
                     matching.filter(|cache| cache.created.elapsed() < Duration::from_secs(60))
@@ -334,7 +383,7 @@ impl MusicCatalog {
                 (Vec::new(), None)
             }
         };
-        let context = self.context().await?;
+        let (context, revision) = self.context().await?;
         let version = context
             .pointer("/client/clientVersion")
             .and_then(Value::as_str)
@@ -349,22 +398,20 @@ impl MusicCatalog {
                 .append_pair("ctoken", continuation)
                 .append_pair("continuation", continuation);
         }
-        let response = self
+        let request = self
             .client
             .post(endpoint)
             .header("Origin", ORIGIN)
             .header("Referer", format!("{ORIGIN}/"))
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
-            .json(&body)
+            .json(&body);
+        let response = self
+            .authenticate(request, revision)?
             .send()
             .await
             .map_err(|_| catalog_error())?;
-        let data: Value = serde_json::from_slice(&bounded_body(response, 4 * 1024 * 1024).await?)
-            .map_err(|_| catalog_error())?;
-        if data.get("error").is_some() {
-            return Err(catalog_error());
-        }
+        let data = self.response(response, revision).await?;
         let (page, continuation) = parse_results(&data, kind)?;
         let mut tracks = previous;
         let mut ids: BTreeSet<String> = tracks.iter().map(|track| track.id.clone()).collect();
@@ -384,34 +431,174 @@ impl MusicCatalog {
             results: results.clone(),
             continuation,
             created: Instant::now(),
+            revision,
         });
         Ok(results)
     }
 
-    async fn context(&self) -> Result<Value> {
+    async fn context(&self) -> Result<(Value, u64)> {
+        let (revision, session) = self.account.request_session();
         if let Some(session) = self
             .session
             .lock()
             .map_err(|_| AppError::internal())?
             .as_ref()
-            .filter(|session| session.created.elapsed() < Duration::from_secs(15 * 60))
+            .filter(|session| {
+                session.created.elapsed() < Duration::from_secs(15 * 60)
+                    && session.revision == revision
+            })
         {
-            return Ok(session.context.clone());
+            return Ok((session.context.clone(), revision));
         }
-        let response = self
-            .client
-            .get(format!("{ORIGIN}/"))
+        let request = self.client.get(format!("{ORIGIN}/"));
+        let request = if let Some(session) = session {
+            session.request_headers(request)?
+        } else {
+            request
+        };
+        let response = request.send().await.map_err(|_| catalog_error())?;
+        let html = bounded_body(response, 4 * 1024 * 1024).await?;
+        let html = std::str::from_utf8(&html).map_err(|_| catalog_error())?;
+        let context = parse_context(html)?;
+        if self.account.snapshot().revision != revision {
+            return Err(AppError::cancelled());
+        }
+        *self.session.lock().map_err(|_| AppError::internal())? = Some(Session {
+            context: context.clone(),
+            created: Instant::now(),
+            revision,
+        });
+        Ok((context, revision))
+    }
+
+    fn authenticate(
+        &self,
+        request: reqwest::RequestBuilder,
+        revision: u64,
+    ) -> Result<reqwest::RequestBuilder> {
+        let (current, session) = self.account.request_session();
+        if current != revision {
+            return Err(AppError::cancelled());
+        }
+        if let Some(session) = session {
+            session.request_headers(request)
+        } else {
+            Ok(request)
+        }
+    }
+
+    async fn response(&self, response: reqwest::Response, revision: u64) -> Result<Value> {
+        if self.account.snapshot().revision != revision {
+            return Err(AppError::cancelled());
+        }
+        if matches!(response.status().as_u16(), 401 | 403)
+            && self.account.request_session().1.is_some()
+        {
+            self.account.expire(revision);
+            return Err(session_error());
+        }
+        let data: Value = serde_json::from_slice(&bounded_body(response, 4 * 1024 * 1024).await?)
+            .map_err(|_| catalog_error())?;
+        if self.account.snapshot().revision != revision {
+            return Err(AppError::cancelled());
+        }
+        if self.account.request_session().1.is_some()
+            && data
+                .pointer("/responseContext/mainAppWebResponseContext/loggedOut")
+                .and_then(Value::as_bool)
+                == Some(true)
+        {
+            self.account.expire(revision);
+            return Err(session_error());
+        }
+        if data.get("error").is_some() {
+            return Err(catalog_error());
+        }
+        Ok(data)
+    }
+
+    pub(crate) async fn verify_account(&self, session: &CookieSession) -> Result<AccountProfile> {
+        let response = session
+            .request_headers(self.client.get(format!("{ORIGIN}/")))?
             .send()
             .await
             .map_err(|_| catalog_error())?;
         let html = bounded_body(response, 4 * 1024 * 1024).await?;
-        let html = std::str::from_utf8(&html).map_err(|_| catalog_error())?;
-        let context = parse_context(html)?;
-        *self.session.lock().map_err(|_| AppError::internal())? = Some(Session {
-            context: context.clone(),
-            created: Instant::now(),
-        });
-        Ok(context)
+        let context = parse_context(std::str::from_utf8(&html).map_err(|_| catalog_error())?)?;
+        let version = context
+            .pointer("/client/clientVersion")
+            .and_then(Value::as_str)
+            .ok_or_else(catalog_error)?;
+        let request = self
+            .client
+            .post(format!(
+                "{ORIGIN}/youtubei/v1/account/account_menu?prettyPrint=false"
+            ))
+            .header("Origin", ORIGIN)
+            .header("Referer", format!("{ORIGIN}/"))
+            .header("X-YouTube-Client-Name", "67")
+            .header("X-YouTube-Client-Version", version)
+            .json(&json!({"context":context}));
+        let response = session
+            .request_headers(request)?
+            .send()
+            .await
+            .map_err(|_| catalog_error())?;
+        if matches!(response.status().as_u16(), 401 | 403) {
+            return Err(session_error());
+        }
+        let data: Value = serde_json::from_slice(&bounded_body(response, 4 * 1024 * 1024).await?)
+            .map_err(|_| session_error())?;
+        parse_profile(&data)
+    }
+
+    pub(crate) async fn radio(
+        &self,
+        seed_id: &str,
+        cursor: Option<&crate::radio::RadioCursor>,
+    ) -> Result<crate::radio::RadioBatch> {
+        if !valid_video_id(seed_id) {
+            return Err(crate::radio::radio_error());
+        }
+        let _slot = self
+            .radio_slot
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
+        let (context, revision) = self.context().await?;
+        let cursor = cursor.filter(|cursor| cursor.account_revision == revision);
+        let mut body = json!({"context":context,"videoId":seed_id,"playlistId":cursor.map(|cursor|cursor.playlist_id.clone()).unwrap_or_else(||format!("RDAMVM{seed_id}")),"params":"wAEB","enablePersistentPlaylistPanel":true,"isAudioOnly":true,"tunerSettingValue":"AUTOMIX_SETTING_NORMAL"});
+        let mut endpoint = url::Url::parse(&format!("{ORIGIN}/youtubei/v1/next?prettyPrint=false"))
+            .map_err(|_| catalog_error())?;
+        if let Some(cursor) = cursor {
+            body["videoId"] = json!(cursor.seed_id);
+            body["continuation"] = json!(cursor.token);
+            endpoint
+                .query_pairs_mut()
+                .append_pair("ctoken", &cursor.token)
+                .append_pair("continuation", &cursor.token);
+        }
+        let version = body
+            .pointer("/context/client/clientVersion")
+            .and_then(Value::as_str)
+            .ok_or_else(catalog_error)?;
+        let request = self
+            .client
+            .post(endpoint)
+            .header("Origin", ORIGIN)
+            .header("Referer", format!("{ORIGIN}/"))
+            .header("X-YouTube-Client-Name", "67")
+            .header("X-YouTube-Client-Version", version)
+            .json(&body);
+        let response = self
+            .authenticate(request, revision)?
+            .send()
+            .await
+            .map_err(|_| crate::radio::radio_error())?;
+        let data = self.response(response, revision).await?;
+        let batch = crate::radio::parse_radio(&data, seed_id, revision)?;
+        self.remember(&batch.tracks)?;
+        Ok(batch)
     }
 }
 
@@ -590,7 +777,7 @@ pub(crate) fn valid_video_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
-fn parse_duration(text: &str) -> Option<f64> {
+pub(crate) fn parse_duration(text: &str) -> Option<f64> {
     let parts: Vec<_> = text.split(':').collect();
     if !(2..=3).contains(&parts.len())
         || parts
@@ -621,6 +808,29 @@ fn catalog_error() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requests a real YouTube Music radio and continuation; no account or audio"]
+    async fn live_radio_continuation_returns_new_recommendations() {
+        let catalog = MusicCatalog::new().unwrap();
+        let first = catalog.radio("khnokW3Mw24", None).await.unwrap();
+        assert!(first.tracks.len() >= 10);
+        let cursor = first.cursor.as_ref().expect("provider radio continuation");
+        let next = catalog.radio("khnokW3Mw24", Some(cursor)).await.unwrap();
+        let ids: BTreeSet<_> = first.tracks.iter().map(|track| &track.id).collect();
+        let new = next
+            .tracks
+            .iter()
+            .filter(|track| !ids.contains(&track.id))
+            .count();
+        println!(
+            "Live radio: {} initial tracks; {} continuation tracks, {new} new",
+            first.tracks.len(),
+            next.tracks.len()
+        );
+        assert!(new > 0, "radio continuation must extend the sequence");
+        assert!(next.tracks.iter().all(|track| valid_video_id(&track.id)));
+    }
 
     #[test]
     fn bootstrap_parses_only_the_context_object_and_rejects_changed_responses() {

@@ -1,3 +1,4 @@
+pub mod account;
 pub mod application;
 pub mod catalog;
 pub mod error;
@@ -6,4 +7,7 @@ pub mod library;
 mod mpv;
 pub mod playback;
 pub mod provider;
+pub mod queue;
+mod radio;
 pub mod runtime;
+pub mod sign_in;

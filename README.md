@@ -13,12 +13,18 @@ Search-first music app on Apple Silicon macOS, using Tauri 2, Rust, and Svelte 5
 - Play through Rust-managed libmpv/CoreAudio; pause, resume, seek, stop, and adjust volume.
 - Change quality while preserving position and pause state.
 - Cancel in-flight resolution; receive actionable provider/stream failures without exposing signed URLs.
+- Keep listening with YouTube Music radio, native automatic next-song playback, one-track source prefetch, and an editable saved queue.
+- Open an optional private Google sign-in window; verified sessions are managed in Rust and stored in macOS Keychain.
 
-The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Account support, full album/artist browsers, persistent queues, automatic recovery, and OS media controls are still pending. Likes/history are local to this Mac; Home currently uses the guest provider feed rather than a signed-in account. Recorded public tracks only; lossless requires a verified source.
+The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Full album/artist browsers, automatic stream recovery, and OS media controls remain pending. Likes/history and the queue are local to this Mac. Radio is live-verified as a guest; the Google window/isolation/cancellation are native-verified, but a real account's login, personalized feed, and account-required playback still need owner verification. Google may decline embedded sign-in. Recorded tracks only; lossless requires a verified source.
 
 ## Listening
 
-Search in the top bar (or press Command-K), then click a result to play. The heart saves a song to **Liked songs**. **Recently played** records tracks after native playback starts. Player arrows move through the result set you started from; this is not yet a persistent queue or automatic radio.
+Search in the top bar (or press Command-K), then click a result to play. The heart saves a song to **Liked songs**. **Recently played** records tracks after native playback starts. Search and discovery selections start provider radio; collections and local lists retain their loaded order, with radio added after them. Player arrows use the Rust-owned queue, including when the renderer is hidden.
+
+Open **Up next** using the player's queue icon to choose/remove songs, clear the queue, or turn off **Autoplay radio**. Turning radio off still lets already-queued songs finish. Up to 100 tracks and the radio preference survive a restart; playback resumes only when requested. Previous restarts the current song after three seconds, otherwise returning to the previous item.
+
+Use the top-right avatar or sidebar session label for **Account**. **Connect Google** opens Google's own page in an ephemeral native window. Closing/cancelling it leaves guest listening available. Sign-out removes Vessel's saved Keychain session and stops playback while retaining local likes, history, queue, and appearance. See [radio and account behavior, verification, and remaining account QA](docs/radio-and-accounts.md).
 
 Volume updates live while dragging, with bounded/coalesced native writes. Click the player's cover for a larger now-playing picture; on wide windows the artwork panel is shown by default. The app uses provider artwork and falls back to the original thumbnail when a higher-resolution image is unavailable.
 
@@ -65,6 +71,8 @@ Real guest playback integration checks (network-dependent; CoreAudio output is m
 ```sh
 cargo test --manifest-path src-tauri/Cargo.toml --test live_playback -- --ignored --nocapture --test-threads=1
 cargo test --manifest-path src-tauri/Cargo.toml --test live_catalog -- --ignored --nocapture --test-threads=1
+cargo test --manifest-path src-tauri/Cargo.toml --test live_radio -- --ignored --nocapture --test-threads=1
+cargo test --manifest-path src-tauri/Cargo.toml live_radio_continuation_returns_new_recommendations -- --ignored --nocapture
 cargo test --manifest-path src-tauri/Cargo.toml --lib native_volume_values_are_applied_immediately -- --ignored --nocapture
 ```
 

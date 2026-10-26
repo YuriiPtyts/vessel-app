@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     process::Stdio,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -10,6 +10,7 @@ use tokio::{io::AsyncReadExt, process::Command, time::timeout};
 use url::Url;
 
 use crate::{
+    account::{Account, CookieSession},
     error::{AppError, Result},
     runtime::RuntimePaths,
 };
@@ -47,6 +48,7 @@ pub struct TrackInspection {
     pub track: Track,
     pub formats: Vec<AudioFormat>,
     pub recommended_format_id: String,
+    pub account_source: bool,
 }
 
 // URLs and request headers stay in Rust and are deliberately not Serialize or Debug.
@@ -55,11 +57,13 @@ pub(crate) struct StreamSource {
     pub url: String,
     pub headers: BTreeMap<String, String>,
     available_at: Option<f64>,
+    pub account_source: bool,
 }
 
 #[derive(Clone)]
 pub(crate) struct ResolvedTrack {
     pub inspection: TrackInspection,
+    pub account_revision: u64,
     streams: BTreeMap<String, StreamSource>,
 }
 
@@ -73,10 +77,11 @@ pub(crate) struct Resolver {
     paths: RuntimePaths,
     client: reqwest::Client,
     cache: Mutex<VecDeque<CachedStream>>,
+    account: Arc<Account>,
 }
 
 impl Resolver {
-    pub fn new(paths: RuntimePaths) -> Result<Self> {
+    pub fn new(paths: RuntimePaths, account: Arc<Account>) -> Result<Self> {
         let client = reqwest::Client::builder()
             .https_only(true)
             .timeout(Duration::from_secs(5))
@@ -86,11 +91,14 @@ impl Resolver {
             paths,
             client,
             cache: Mutex::new(VecDeque::new()),
+            account,
         })
     }
 
     pub async fn resolve(&self, input: &str) -> Result<ResolvedTrack> {
-        let key = canonical_track_url(input)?;
+        let canonical = canonical_track_url(input)?;
+        let (revision, session) = self.account.request_session();
+        let key = format!("{revision}:{canonical}");
         let cached = {
             let mut cache = self.cache.lock().map_err(|_| AppError::internal())?;
             cache.retain(|entry| {
@@ -105,16 +113,23 @@ impl Resolver {
         if let Some(cached) = cached
             && self.probe(&cached).await.is_ok()
         {
+            self.check_revision(revision)?;
             return Ok(cached);
         }
         let mut last_error = AppError::internal();
         // One tested client avoids the default's multi-client/JS work and delayed URLs.
         // The ordinary resolver remains the compatibility fallback, with its timing rules intact.
-        for profile in [Some("visionos"), None] {
-            let result = resolve_profile(&self.paths, &key, profile).await;
+        let mut attempts = vec![(Some("visionos"), None), (None, None)];
+        if let Some(session) = &session {
+            attempts.push((None, Some(session.as_ref())));
+        }
+        for (profile, auth) in attempts {
+            let result = resolve_profile(&self.paths, &canonical, profile, auth).await;
             match result {
-                Ok(track) => match self.probe(&track).await {
+                Ok(mut track) => match self.probe(&track).await {
                     Ok(()) => {
+                        self.check_revision(revision)?;
+                        track.account_revision = revision;
                         let mut cache = self.cache.lock().map_err(|_| AppError::internal())?;
                         cache.retain(|entry| entry.key != key);
                         cache.push_front(CachedStream {
@@ -127,10 +142,29 @@ impl Resolver {
                     }
                     Err(error) => last_error = error,
                 },
-                Err(error) => last_error = error,
+                Err(error) => {
+                    if auth.is_some() && error.code == "account_required" {
+                        self.account.expire(revision);
+                    }
+                    last_error = error;
+                }
             }
         }
         Err(last_error)
+    }
+
+    fn check_revision(&self, revision: u64) -> Result<()> {
+        if self.account.snapshot().revision == revision {
+            Ok(())
+        } else {
+            Err(AppError::cancelled())
+        }
+    }
+
+    pub fn invalidate(&self) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.clear();
+        }
     }
 
     async fn probe(&self, track: &ResolvedTrack) -> Result<()> {
@@ -196,7 +230,15 @@ impl ResolvedTrack {
         &self,
         track_id: &str,
         format_id: &str,
+        account_revision: u64,
     ) -> Result<(Track, AudioFormat, StreamSource)> {
+        if self.account_revision != account_revision {
+            return Err(AppError::new(
+                "stale_session",
+                "Your account changed. Play this song again to refresh its audio source.",
+                true,
+            ));
+        }
         if self.inspection.track.id != track_id {
             return Err(AppError::new(
                 "stale_track",
@@ -272,11 +314,13 @@ async fn resolve_profile(
     paths: &RuntimePaths,
     input: &str,
     profile: Option<&str>,
+    session: Option<&CookieSession>,
 ) -> Result<ResolvedTrack> {
     let canonical = canonical_track_url(input)?;
     let extractor = paths.require("yt-dlp")?;
     let deno = paths.require("deno")?;
     let mut command = Command::new(extractor);
+    let cookie_file = session.map(CookieSession::cookie_file).transpose()?;
     command
         .args([
             "--ignore-config",
@@ -303,6 +347,9 @@ async fn resolve_profile(
         command
             .arg("--extractor-args")
             .arg(format!("youtube:player_client={profile}"));
+    }
+    if let Some(file) = &cookie_file {
+        command.arg("--cookies").arg(file.path());
     }
     command
         .arg("--")
@@ -351,7 +398,13 @@ async fn resolve_profile(
             if !status.success() {
                 return Err(provider_error(&String::from_utf8_lossy(&diagnostics)));
             }
-            let resolved = parse_metadata(&metadata)?;
+            let mut resolved = parse_metadata(&metadata)?;
+            if session.is_some() {
+                resolved.inspection.account_source = true;
+                for source in resolved.streams.values_mut() {
+                    source.account_source = true;
+                }
+            }
             let now = epoch_seconds()?;
             // Signed URLs can be returned before they become usable. Match yt-dlp's
             // downloader by honoring the provider's available_at, not a hard-coded delay.
@@ -440,7 +493,7 @@ fn provider_error(diagnostics: &str) -> AppError {
     {
         AppError::new(
             "account_required",
-            "YouTube requires authentication or additional verification for this request. Try another public track; account support is not connected yet.",
+            "YouTube requires authentication or additional verification for this song. Connect or reconnect Google in Account, or try another public track.",
             false,
         )
     } else if text.contains("unavailable")
@@ -557,6 +610,7 @@ fn parse_metadata(json: &[u8]) -> Result<ResolvedTrack> {
                 url,
                 headers,
                 available_at: metadata_number(format.available_at),
+                account_source: false,
             },
         );
         formats.push(AudioFormat {
@@ -580,6 +634,7 @@ fn parse_metadata(json: &[u8]) -> Result<ResolvedTrack> {
             )
         })?;
     Ok(ResolvedTrack {
+        account_revision: 0,
         inspection: TrackInspection {
             track: Track {
                 id: metadata.id,
@@ -599,6 +654,7 @@ fn parse_metadata(json: &[u8]) -> Result<ResolvedTrack> {
             },
             formats,
             recommended_format_id,
+            account_source: false,
         },
         streams,
     })
@@ -669,7 +725,9 @@ mod tests {
         let public_json = serde_json::to_string(&track.inspection).unwrap();
         assert!(!public_json.contains("https://"));
         assert!(!public_json.contains("http_headers"));
-        assert!(matches!(track.source("other", "opus"), Err(error) if error.code == "stale_track"));
+        assert!(
+            matches!(track.source("other", "opus", 0), Err(error) if error.code == "stale_track")
+        );
     }
 
     #[test]
