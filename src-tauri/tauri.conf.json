@@ -13,16 +13,16 @@
     "windows": [
       {
         "label": "main",
-        "title": "Vessel — Playback Lab",
-        "width": 960,
-        "height": 900,
-        "minWidth": 420,
-        "minHeight": 640,
-        "backgroundColor": "#151816"
+        "title": "Vessel",
+        "width": 1220,
+        "height": 880,
+        "minWidth": 900,
+        "minHeight": 680,
+        "backgroundColor": "#17141f"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com https://*.ytimg.com; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

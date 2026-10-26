@@ -27,13 +27,17 @@ pub struct AudioFormat {
     pub channels: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Track {
     pub id: String,
     pub title: String,
     pub artist: String,
     pub duration_seconds: Option<f64>,
+    #[serde(default)]
+    pub album: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -87,7 +91,7 @@ impl ResolvedTrack {
         if self.inspection.track.id != track_id {
             return Err(AppError::new(
                 "stale_track",
-                "Inspect this track again before playing it.",
+                "Choose this song again before changing its audio quality.",
                 true,
             ));
         }
@@ -105,7 +109,7 @@ impl ResolvedTrack {
             )),
             _ => Err(AppError::new(
                 "format_unavailable",
-                "This quality is no longer available. Inspect the track again.",
+                "This quality is no longer available. Play the song again to refresh its available sources.",
                 true,
             )),
         }
@@ -194,7 +198,7 @@ pub(crate) async fn resolve(paths: &RuntimePaths, input: &str) -> Result<Resolve
     let mut child = command.spawn().map_err(|_| {
         AppError::new(
             "resolver_start",
-            "The bundled stream resolver could not start. Rebuild the app's native dependencies.",
+            "Vessel could not open an audio source. Reinstall the app or rebuild its bundled runtime.",
             false,
         )
     })?;
@@ -240,7 +244,7 @@ pub(crate) async fn resolve(paths: &RuntimePaths, input: &str) -> Result<Resolve
     .map_err(|_| {
         AppError::new(
             "provider_timeout",
-            "YouTube took too long to return a stream. Check your connection and try again.",
+            "YouTube Music took too long to load this song. Check your connection and try again.",
             true,
         )
     })?
@@ -306,12 +310,21 @@ struct Metadata {
     artist: Option<String>,
     uploader: Option<String>,
     duration: Option<f64>,
+    album: Option<String>,
+    #[serde(default)]
+    thumbnails: Vec<MetadataThumbnail>,
     is_live: Option<bool>,
     format_id: Option<String>,
     #[serde(default)]
     http_headers: BTreeMap<String, String>,
     #[serde(default)]
     formats: Vec<ProviderFormat>,
+}
+
+#[derive(Deserialize)]
+struct MetadataThumbnail {
+    url: String,
+    width: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -410,12 +423,32 @@ fn parse_metadata(json: &[u8]) -> Result<ResolvedTrack> {
                     .or(metadata.uploader)
                     .unwrap_or_else(|| "Unknown artist".into()),
                 duration_seconds: metadata_number(metadata.duration),
+                album: metadata.album,
+                thumbnail_url: metadata
+                    .thumbnails
+                    .iter()
+                    .rev()
+                    .filter(|thumbnail| thumbnail.width.unwrap_or(0) <= 512)
+                    .find_map(|thumbnail| artwork_url(&thumbnail.url)),
             },
             formats,
             recommended_format_id,
         },
         streams,
     })
+}
+
+pub(crate) fn artwork_url(value: &str) -> Option<String> {
+    if value.len() > 2048 {
+        return None;
+    }
+    let url = Url::parse(value).ok()?;
+    let host = url.host_str()?;
+    (url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && (host.ends_with(".googleusercontent.com") || host.ends_with(".ytimg.com")))
+    .then(|| value.to_owned())
 }
 
 fn metadata_number(value: Option<f64>) -> Option<f64> {

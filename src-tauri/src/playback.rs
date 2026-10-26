@@ -351,7 +351,7 @@ fn refresh(engine: &Mpv, snapshot: &mut PlaybackSnapshot) {
         snapshot.status = PlaybackStatus::Failed;
         snapshot.error = Some(AppError::new(
             "stream_failed",
-            "The audio stream could not continue. Inspect the track again to renew its URL, or select another quality.",
+            "This song could not continue. Play it again to refresh its source, or choose a different quality.",
             true,
         ));
         return;

@@ -41,7 +41,7 @@ async fn guest_stream_decodes_seeks_pauses_and_switches_quality() {
     let root = std::env::var_os("VESSEL_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime"));
-    let app = Application::new(RuntimePaths::new(root), |_| {});
+    let app = Application::new(RuntimePaths::new(root), |_| {}).unwrap();
     app.volume(0.0).await.unwrap();
     let url = std::env::var("VESSEL_TEST_URL")
         .unwrap_or_else(|_| "https://music.youtube.com/watch?v=dQw4w9WgXcQ".into());
@@ -109,7 +109,7 @@ async fn guest_stream_decodes_seeks_pauses_and_switches_quality() {
 
 #[tokio::test]
 async fn invalid_input_never_starts_the_resolver_or_engine() {
-    let app = Application::new(RuntimePaths::new("/nonexistent"), |_| {});
+    let app = Application::new(RuntimePaths::new("/nonexistent"), |_| {}).unwrap();
     assert_eq!(
         app.inspect("file:///etc/passwd").await.unwrap_err().code,
         "invalid_url"
@@ -124,7 +124,7 @@ async fn invalid_input_never_starts_the_resolver_or_engine() {
 #[ignore = "starts the real bundled resolver; run explicitly"]
 async fn cancellation_releases_the_resolver_promptly() {
     let paths = RuntimePaths::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime"));
-    let app = Arc::new(Application::new(paths, |_| {}));
+    let app = Arc::new(Application::new(paths, |_| {}).unwrap());
     let request = app.clone();
     let pending = tokio::spawn(async move {
         request

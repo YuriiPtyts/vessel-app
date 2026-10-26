@@ -2,7 +2,7 @@
 
 ## Ownership and boundaries
 
-The Rust application owns playback truth. Svelte renders snapshots and sends commands over narrowly scoped Tauri IPC. The first slice implements a guest yt-dlp resolver and a dynamically loaded libmpv adapter. Queue ownership/persistence and authenticated catalog access remain future work.
+The Rust application owns playback truth and the local collection. Svelte renders snapshots and sends commands over narrowly scoped Tauri IPC. A guest InnerTube catalog, yt-dlp resolver, and dynamically loaded libmpv adapter are implemented. Queue ownership/persistence and authenticated catalog access remain future work.
 
 | Boundary | Owns |
 | --- | --- |
@@ -26,7 +26,9 @@ Do not assume Google OAuth or an embedded Google login provides the needed YouTu
 Implemented path: Rust resolver -> short-lived URL plus required request context -> libmpv -> CoreAudio. Video and engine-side automatic extraction are disabled. Rust retains signed URLs and headers; public IPC DTOs contain metadata and available-format identifiers only.
 
 - `provider.rs`: validates/canonicalizes track links, runs a bounded/time-limited bundled resolver, classifies failures, and discovers audio-only formats. It honors each format's `available_at` timestamp before exposing playable choices.
-- `application.rs`: coordinates one cancellable inspection, opaque resolved sources, and playback commands. Failed inspection does not interrupt an already playing track.
+- `catalog.rs`: bootstraps anonymous WEB_REMIX context from the actual Music homepage; searches songs/music videos directly over bounded HTTPS; normalizes artist/album/artwork/duration; handles provider pagination. One latest-wins request slot, a 60-second result cache, a 15-minute context cache, a 100-result cap, and 128 known track metadata entries bound work/storage. No embedded provider webpage or permanent search daemon.
+- `application.rs`: coordinates latest-wins cancellable resolution, opaque sources, one-click search-result playback, and local collection operations. Failed resolution does not interrupt an already playing track. Catalog metadata is retained for the native player's title/artwork.
+- `library.rs`: atomic JSON persistence for at most 500 local likes and 40 recent tracks. Native Playing transitions record history once per track, on the control actor rather than the real-time audio callback. Existing malformed data is preserved, with a nonfatal library error. Only public metadata is persisted.
 - `playback.rs`: a bounded actor owns transport state and snapshots. The native engine is lazy-loaded and never shared across threads. The idle actor blocks; active updates are capped at four per second.
 - `mpv.rs`: the isolated FFI boundary loads a replaceable dynamic library, applies audio-only options, bounded media caches, and native commands/events.
 - `runtime.rs`: locates the development or packaged runtime. The installed app uses its own Resources/runtime directory, not PATH/Homebrew.
@@ -41,7 +43,9 @@ Do not fetch/decode on the audio callback. Do not introduce a permanent Python/N
 
 Use Tauri 2 APIs and a native macOS titlebar/traffic lights first. Exercise native semantic vibrancy before adding any custom Objective-C integration. Windows/Linux adapters come later. Opaque materials are a first-class visual mode.
 
-The initial shell intentionally uses an opaque background and native window decoration. Material effects must earn a place through compatibility and resource measurements.
+The macOS platform override configures a transparent window, native traffic lights, an overlay titlebar, and `UnderWindowBackground` semantic material through Tauri's built-in v2 API. Version 2.12.5 exposes this without a separate vibrancy plugin; its current schema documents the old macOS-private-api toggle as a no-op since 2.12.1. Reduced transparency removes native effects and the player's CSS backdrop blur, then uses opaque surfaces. Reduced motion is respected. Only the floating player uses CSS backdrop blur; static hero art does not animate continuously.
+
+The frontend is organized into a shell and Artwork, TrackList, and PlayerBar components. Public artwork URLs are restricted to HTTPS Google image hosts and loaded lazily without a referrer. The frontend maintains the transient result-set cursor used by previous/next buttons; it is not a durable queue and does not auto-advance in a hidden renderer. A Rust queue remains a separate milestone.
 
 ## Closed-source packaging constraint
 

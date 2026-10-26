@@ -23,7 +23,7 @@ impl RuntimePaths {
         if !path.is_file() {
             return Err(AppError::new(
                 "runtime_missing",
-                "Playback dependencies are missing. For this development build, run npm run prepare:native and rebuild the desktop app.",
+                "The audio engine is missing from this build. Reinstall Vessel or rebuild the app.",
                 false,
             ));
         }

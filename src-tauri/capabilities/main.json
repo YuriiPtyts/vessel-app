@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "The local player receives backend state events. Filesystem, shell, and provider credentials remain behind Rust commands.",
+  "description": "The local music app receives playback events and supports native titlebar dragging. Provider, storage, and playback operations stay behind Rust commands.",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-start-dragging"]
 }

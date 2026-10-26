@@ -3,7 +3,12 @@
 use serde::Serialize;
 use tauri::Manager;
 use vessel_app::{
-    application::Application, error::Result, playback::PlaybackSnapshot, provider::TrackInspection,
+    application::{Application, PlaybackSelection},
+    catalog::{SearchKind, SearchResults},
+    error::Result,
+    library::{LibrarySnapshot, LocalLibrary},
+    playback::PlaybackSnapshot,
+    provider::TrackInspection,
     runtime::RuntimePaths,
 };
 
@@ -15,6 +20,65 @@ struct RuntimeReport {
     architecture: &'static str,
     debug_build: bool,
     playback_dependencies_available: bool,
+}
+
+#[tauri::command]
+async fn search_music(
+    state: tauri::State<'_, Application>,
+    query: String,
+    kind: SearchKind,
+    more: bool,
+) -> Result<SearchResults> {
+    state.search(&query, kind, more).await
+}
+
+#[tauri::command]
+async fn play_song(
+    state: tauri::State<'_, Application>,
+    video_id: String,
+) -> Result<PlaybackSelection> {
+    state.play_song(&video_id).await
+}
+
+#[tauri::command]
+async fn local_library(state: tauri::State<'_, Application>) -> Result<LibrarySnapshot> {
+    state.library()
+}
+
+#[tauri::command]
+async fn toggle_like(
+    state: tauri::State<'_, Application>,
+    video_id: String,
+) -> Result<LibrarySnapshot> {
+    state.toggle_like(&video_id)
+}
+
+#[tauri::command]
+async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::window::{Effect, EffectState, EffectsBuilder};
+        let effects = if reduced {
+            None
+        } else {
+            Some(
+                EffectsBuilder::new()
+                    .effect(Effect::UnderWindowBackground)
+                    .state(EffectState::FollowsWindowActiveState)
+                    .build(),
+            )
+        };
+        window.set_effects(effects).map_err(|_| {
+            vessel_app::error::AppError::new(
+                "material_unavailable",
+                "The native window material could not be changed.",
+                true,
+            )
+        })?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, reduced);
+    Ok(())
 }
 
 #[tauri::command]
@@ -91,13 +155,25 @@ fn main() {
                 app.path().resource_dir()?.join("runtime")
             };
             let handle = app.handle().clone();
-            app.manage(Application::new(RuntimePaths::new(root), move |snapshot| {
-                let _ = handle.emit("playback-state", snapshot);
-            }));
+            let library = std::sync::Arc::new(LocalLibrary::open(
+                app.path().app_data_dir()?.join("collection.json"),
+            ));
+            app.manage(Application::with_library(
+                RuntimePaths::new(root),
+                library,
+                move |snapshot| {
+                    let _ = handle.emit("playback-state", snapshot);
+                },
+            )?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             runtime_report,
+            search_music,
+            play_song,
+            local_library,
+            toggle_like,
+            set_material_mode,
             inspect_track,
             cancel_inspection,
             play_track,

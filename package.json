@@ -24,6 +24,8 @@
     "@tailwindcss/vite": "4.3.3",
     "@tauri-apps/cli": "2.12.4",
     "@types/node": "26.6.5",
+    "prettier": "3.9.10",
+    "prettier-plugin-svelte": "4.1.1",
     "svelte-check": "4.7.7",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",

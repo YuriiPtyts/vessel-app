@@ -1,0 +1,227 @@
+<script lang="ts">
+  import {
+    Check,
+    ChevronUp,
+    Heart,
+    LoaderCircle,
+    Pause,
+    Play,
+    SkipBack,
+    SkipForward,
+    SlidersHorizontal,
+    Square,
+    Volume2,
+    X,
+  } from '@lucide/svelte';
+  import {
+    formatLabel,
+    trackTime,
+    type PlaybackSnapshot,
+    type Track,
+    type TrackInspection,
+  } from '../native';
+  import Artwork from './Artwork.svelte';
+
+  let {
+    playback,
+    pending,
+    inspection,
+    busy,
+    liked,
+    canPrevious,
+    canNext,
+    onpause,
+    onseek,
+    onvolume,
+    onstop,
+    oncancel,
+    onprevious,
+    onnext,
+    onlike,
+    onquality,
+  }: {
+    playback: PlaybackSnapshot;
+    pending: Track | null;
+    inspection: TrackInspection | null;
+    busy: boolean;
+    liked: boolean;
+    canPrevious: boolean;
+    canNext: boolean;
+    onpause: () => void;
+    onseek: (position: number) => Promise<void>;
+    onvolume: (value: number) => Promise<void>;
+    onstop: () => void;
+    oncancel: () => void;
+    onprevious: () => void;
+    onnext: () => void;
+    onlike: () => void;
+    onquality: (id: string) => void;
+  } = $props();
+  let seekDraft = $state<number | null>(null);
+  let volumeDraft = $state<number | null>(null);
+  let qualityOpen = $state(false);
+  const active = $derived(['playing', 'paused', 'buffering'].includes(playback.status));
+  const shown = $derived(playback.track ?? pending);
+  const qualityReady = $derived(
+    inspection && inspection.track.id === playback.track?.id && !pending,
+  );
+
+  async function seek(value: number) {
+    await onseek(value);
+    seekDraft = null;
+  }
+  async function volume(value: number) {
+    await onvolume(value);
+    volumeDraft = null;
+  }
+</script>
+
+<section class="floating-player" aria-label="Music player">
+  <div class="now-playing">
+    <Artwork url={shown?.thumbnailUrl} className="player-art" />
+    <div class="now-playing-copy">
+      <h2>{shown?.title ?? 'A little space for your music'}</h2>
+      <p>
+        {playback.track?.artist ??
+          (pending ? 'Getting your song ready…' : 'Find something you love')}
+      </p>
+    </div>
+    <button
+      class="icon-button player-heart"
+      class:liked
+      aria-label={liked ? 'Unsave current song' : 'Save current song'}
+      aria-pressed={liked}
+      disabled={!playback.track}
+      onclick={onlike}><Heart size={16} fill={liked ? 'currentColor' : 'none'} /></button
+    >
+  </div>
+  <div class="player-center">
+    <div class="transport-controls">
+      <button
+        class="icon-button"
+        aria-label="Previous in these results"
+        title="Previous in these results"
+        disabled={!canPrevious || busy}
+        onclick={onprevious}><SkipBack size={17} fill="currentColor" /></button
+      >
+      <button
+        class="main-transport"
+        aria-label={playback.status === 'playing' || playback.status === 'buffering'
+          ? 'Pause playback'
+          : 'Resume playback'}
+        disabled={!active || busy}
+        onclick={onpause}
+      >
+        {#if playback.status === 'loading' || (pending && !playback.track)}<LoaderCircle
+            size={20}
+            class="spin"
+          />
+        {:else if playback.status === 'playing' || playback.status === 'buffering'}<Pause
+            size={18}
+            fill="currentColor"
+          />
+        {:else}<Play size={18} fill="currentColor" />{/if}
+      </button>
+      <button
+        class="icon-button"
+        aria-label="Next in these results"
+        title="Next in these results"
+        disabled={!canNext || busy}
+        onclick={onnext}><SkipForward size={17} fill="currentColor" /></button
+      >
+    </div>
+    <div class="playback-timeline">
+      <span>{trackTime(seekDraft ?? playback.positionSeconds)}</span><input
+        type="range"
+        aria-label="Playback position"
+        min="0"
+        max={playback.durationSeconds ?? 1}
+        step="0.1"
+        value={seekDraft ?? playback.positionSeconds}
+        disabled={!active || !playback.durationSeconds || busy}
+        oninput={(event) => {
+          seekDraft = event.currentTarget.valueAsNumber;
+        }}
+        onchange={(event) => seek(event.currentTarget.valueAsNumber)}
+        aria-valuetext={trackTime(seekDraft ?? playback.positionSeconds)}
+      /><span>{trackTime(playback.durationSeconds)}</span>
+    </div>
+  </div>
+  <div class="player-accessories">
+    <div class="player-volume">
+      <Volume2 size={15} aria-hidden="true" /><input
+        type="range"
+        aria-label="Volume"
+        min="0"
+        max="100"
+        step="1"
+        value={volumeDraft ?? playback.volume}
+        oninput={(event) => {
+          volumeDraft = event.currentTarget.valueAsNumber;
+        }}
+        onchange={(event) => volume(event.currentTarget.valueAsNumber)}
+        disabled={busy}
+      />
+    </div>
+    <div class="quality-anchor">
+      <button
+        class="quality-button"
+        aria-label="Audio quality"
+        aria-expanded={qualityOpen}
+        onclick={() => {
+          qualityOpen = !qualityOpen;
+        }}
+        ><SlidersHorizontal size={15} /><span
+          >{playback.activeFormat
+            ? playback.activeFormat.codec === 'opus'
+              ? 'OPUS'
+              : 'AAC'
+            : 'AUTO'}</span
+        ><ChevronUp size={12} /></button
+      >
+      {#if qualityOpen}
+        <div class="quality-popover" role="region" aria-label="Audio quality options">
+          <div class="popover-heading">
+            <div>
+              <span class="eyebrow">YOUR SOUND</span>
+              <h3>Audio quality</h3>
+            </div>
+            <button
+              class="icon-button"
+              aria-label="Close quality options"
+              onclick={() => {
+                qualityOpen = false;
+              }}><X size={15} /></button
+            >
+          </div>
+          {#if qualityReady && inspection}
+            {#each inspection.formats as format (format.id)}
+              <button
+                class="quality-option"
+                class:selected={format.id === playback.activeFormat?.id}
+                disabled={busy}
+                onclick={() => onquality(format.id)}
+                ><span>{formatLabel(format)}</span
+                >{#if format.id === playback.activeFormat?.id}<Check size={15} />{/if}</button
+              >
+            {/each}
+            <p>Available source formats. Bitrates are estimates; no lossless source is verified.</p>
+          {:else}<p>Play a song to see the quality available for that source.</p>{/if}
+        </div>
+      {/if}
+    </div>
+    <button
+      class="icon-button stop-button"
+      aria-label="Stop playback"
+      disabled={!playback.track || busy}
+      onclick={onstop}><Square size={13} /></button
+    >
+  </div>
+  {#if pending}
+    <div class="connection-status" role="status">
+      <LoaderCircle size={12} class="spin" /><span
+        >Getting <strong>{pending.title}</strong> ready…</span
+      ><button aria-label="Cancel song loading" onclick={oncancel}><X size={13} /></button>
+    </div>
+  {/if}
+</section>

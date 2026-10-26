@@ -2,6 +2,10 @@
 
 Recorded 2026-10-26 from the owner's answers.
 
+## Search-first product correction
+
+The owner explicitly rejected the link-inspection lab as the main experience. Normal listening must begin with music search and direct playback, presented as a finished music-app layout. Keep extraction and format inspection behind the interface. Current navigation is Listen now, Search, local Liked songs, and Recently played, with a persistent player. Account support remains optional and an early priority; local saved music must be clearly distinguished from the account library.
+
 ## Confirmed
 
 1. Polish macOS first. Add other operating systems in future milestones.
