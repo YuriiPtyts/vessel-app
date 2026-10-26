@@ -102,6 +102,24 @@ Optional account acquisition/storage/library reads; broader track/region/account
 
 The app now has a single complete default palette, four palette accent choices, adjustable glass tint, opaque mode, compact/comfortable rows, compact navigation, and a collapsible now-playing artwork panel. Preferences migrate the previous opacity setting and are kept locally. Additional complete themes are an owner-directed future milestone in themes.md. Native fullscreen/dragging/accessibility QA and full memory/CPU/energy budgets remain open.
 
+## Faster playback, provider Home, and desktop-clear glass milestone
+
+### Verified
+
+- Isolated the single-file extractor startup cost, compared supported client profiles, and checked usable partial audio responses on three public tracks. The directory-based frozen runtime uses pinned source and upstream hash-locked build requirements; no user-installed Python is needed.
+- The fast resolver keeps the ordinary client as fallback, probes chosen URLs, honors per-source availability, and caches at most eight private resolutions with expiry checks. New regression tests cover selected-format readiness and expired replay candidates.
+- Against the final `.app` runtime with a system-only PATH, search-result selection reached decoded output in **4.90 seconds**, cached repeat in **0.89 seconds**, and the separate Opus playback regression in **3.39 seconds**. Pause/seek, paused AAC quality switching, resume/stop, cancellation, and native volume readbacks pass. Audio checks were muted.
+- Live `FEmusic_home` returned genuine provider shelves. Recommended Mellow Pop Classics opened **49 tracks**. Other observed shelf titles/order changed with provider responses, including regional content and All hits; no fixed artist or mood search populates Home.
+- Ten WebKit contract tests pass, including provider shelf/collection dispatch without a fixed artist search and version-2 glass migration while retaining layout/accent choices. Previous volume, artwork, collection, keyboard, and narrow-layout tests remain green.
+- Fourteen ordinary Rust unit tests plus the non-network integration check pass; live catalog/search/collection tests, both legacy playback/cancellation checks, and explicit native volume checks pass.
+- Formatting and Clippy with warnings denied pass for default and `native-diagnostics` builds. The production frontend and normal macOS app bundle build pass.
+- A live AppKit/WKWebView diagnostic run exited cleanly and passed `scripts/check-native-material.mjs`: clear native background alpha 0, non-opaque window and real WebView, clear native glass style 1, mounted frontend/player, 18% tint, fully transparent main stage, three live provider shelves, no alert.
+- The final normal app launched for eight seconds with a system-only PATH and quit normally via its own NSRunningApplication (`exit 0`). Installed bundle: **197.70 MiB**. Local development ZIP: about **97 MiB**. No generated runtime or archive is committed.
+
+### Interpretation
+
+These are real native/provider checks plus explicitly mocked WebKit UI checks, not a broad p95, acoustic-quality, compositor-energy, clean-machine, or minimum-OS certification. A foreground desktop pixel comparison was not reliable in this execution environment; the actual AppKit/WebKit material contract was verified instead. See startup-and-materials.md for methods, first-use/fallback limits, and reproduction commands. Full resource budgets and OS-interaction QA remain open.
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.

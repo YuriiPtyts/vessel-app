@@ -17,7 +17,9 @@ pub struct Application {
     resolved: Mutex<Option<ResolvedTrack>>,
     resolver_slot: Semaphore,
     cancellation: watch::Sender<u64>,
+    closing: watch::Sender<bool>,
     catalog: MusicCatalog,
+    resolver: provider::Resolver,
     library: Arc<LocalLibrary>,
 }
 
@@ -42,6 +44,7 @@ impl Application {
         emit: impl Fn(PlaybackSnapshot) + Send + Sync + 'static,
     ) -> Result<Self> {
         let (cancellation, _) = watch::channel(0);
+        let (closing, _) = watch::channel(false);
         let history = library.clone();
         let last_played = Mutex::new(None::<String>);
         Ok(Self {
@@ -63,10 +66,12 @@ impl Application {
                     emit(snapshot);
                 }),
             ),
+            resolver: provider::Resolver::new(paths.clone())?,
             paths,
             resolved: Mutex::new(None),
             resolver_slot: Semaphore::new(1),
             cancellation,
+            closing,
             catalog: MusicCatalog::new()?,
             library,
         })
@@ -89,7 +94,7 @@ impl Application {
             _ = cancel.changed() => return Err(AppError::cancelled()),
         };
         let resolved = tokio::select! {
-            result = provider::resolve(&self.paths, url) => result?,
+            result = self.resolver.resolve(url) => result?,
             _ = cancel.changed() => return Err(AppError::cancelled()),
         };
         let mut current = self.resolved.lock().map_err(|_| AppError::internal())?;
@@ -103,6 +108,12 @@ impl Application {
 
     pub async fn search(&self, query: &str, kind: SearchKind, more: bool) -> Result<SearchResults> {
         self.catalog.search(query, kind, more).await
+    }
+    pub async fn home(&self, refresh: bool) -> Result<crate::home::HomeFeed> {
+        self.catalog.home(refresh).await
+    }
+    pub async fn collection(&self, id: &str, more: bool) -> Result<crate::home::CollectionPage> {
+        self.catalog.collection(id, more).await
     }
 
     pub async fn play_song(&self, video_id: &str) -> Result<PlaybackSelection> {
@@ -176,6 +187,17 @@ impl Application {
             .send_modify(|generation| *generation = generation.wrapping_add(1));
     }
 
+    pub async fn warm_up(&self) {
+        let mut cancel = self.closing.subscribe();
+        if *cancel.borrow_and_update() {
+            return;
+        }
+        tokio::select! {
+            _ = async { let _ = tokio::join!(provider::warm_up(&self.paths), self.player.warm_up()); } => {},
+            _ = cancel.changed() => {}
+        }
+    }
+
     pub async fn play(&self, track_id: &str, format_id: &str) -> Result<PlaybackSnapshot> {
         let (track, format, source) = self
             .resolved
@@ -190,6 +212,8 @@ impl Application {
                 )
             })?
             .source(track_id, format_id)?;
+        let mut cancel = self.cancellation.subscribe();
+        tokio::select! { result = source.wait_ready() => result?, _ = cancel.changed() => return Err(AppError::cancelled()) }
         self.player.load(track, format, source).await
     }
 
@@ -210,6 +234,7 @@ impl Application {
         self.player.stop().await
     }
     pub fn shutdown(&self) {
+        self.closing.send_replace(true);
         self.cancel_inspection();
         self.catalog.cancel();
         self.player.shutdown();

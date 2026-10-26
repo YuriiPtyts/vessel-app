@@ -7,6 +7,9 @@ rust-version = "1.90"
 publish = false
 default-run = "vessel-app"
 
+[features]
+native-diagnostics = ["dep:objc2", "dep:objc2-app-kit"]
+
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
 
@@ -19,6 +22,10 @@ serde_json = "1"
 tauri = { version = "=2.12.5", features = [] }
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 url = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWindow", "NSView", "NSColor", "NSGlassEffectView", "NSVisualEffectView"], optional = true }
 
 [profile.release]
 codegen-units = 1

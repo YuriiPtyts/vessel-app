@@ -40,6 +40,23 @@ export interface SearchResults {
   tracks: Track[];
   hasMore: boolean;
 }
+export interface HomeItem {
+  id: string;
+  kind: 'song' | 'video' | 'album' | 'playlist';
+  title: string;
+  subtitle: string;
+  thumbnailUrl: string | null;
+  track: Track | null;
+}
+export interface HomeFeed {
+  shelves: { id: string; title: string; items: HomeItem[] }[];
+  personalized: boolean;
+}
+export interface CollectionPage {
+  item: HomeItem;
+  tracks: Track[];
+  hasMore: boolean;
+}
 export interface LocalLibrary {
   liked: Track[];
   recent: Track[];
@@ -90,6 +107,9 @@ export async function getRuntimeReport(): Promise<RuntimeReport | null> {
 export const inspectTrack = (url: string) => invoke<TrackInspection>('inspect_track', { url });
 export const searchMusic = (query: string, kind: SearchKind = 'songs', more = false) =>
   invoke<SearchResults>('search_music', { query, kind, more });
+export const getHomeFeed = (refresh = false) => invoke<HomeFeed>('home_feed', { refresh });
+export const browseCollection = (id: string, more = false) =>
+  invoke<CollectionPage>('browse_collection', { id, more });
 export const playSong = (videoId: string) => invoke<PlaybackSelection>('play_song', { videoId });
 export const getLibrary = () => invoke<LocalLibrary>('local_library');
 export const toggleLike = (videoId: string) => invoke<LocalLibrary>('toggle_like', { videoId });

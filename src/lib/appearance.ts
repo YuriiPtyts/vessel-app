@@ -1,4 +1,6 @@
-export const DEFAULT_THEME = { id: 'duskfox', name: 'Duskfox', variant: 'Blurred' };
+export const DEFAULT_THEME = { id: 'duskfox', name: 'Duskfox', variant: 'Clear glass' };
+export const GLASS_TINT_MIN = 8;
+export const GLASS_TINT_MAX = 90;
 export const ACCENTS = [
   { id: 'rose', name: 'Rose', color: '#ea9a97' },
   { id: 'iris', name: 'Iris', color: '#c4a7e7' },
@@ -7,7 +9,7 @@ export const ACCENTS = [
 ] as const;
 
 export interface AppearancePreferences {
-  version: 1;
+  version: 2;
   accent: 'rose' | 'iris' | 'foam' | 'gold';
   glassOpacity: number;
   density: 'comfortable' | 'compact';
@@ -18,9 +20,9 @@ export interface AppearancePreferences {
 
 export function defaultAppearance(reducedTransparency = false): AppearancePreferences {
   return {
-    version: 1,
+    version: 2,
     accent: 'rose',
-    glassOpacity: 56,
+    glassOpacity: 18,
     density: 'comfortable',
     sidebarCollapsed: false,
     showNowPlaying: true,
@@ -32,16 +34,18 @@ export function normalizeAppearance(value: unknown, systemReduced = false): Appe
   const defaults = defaultAppearance(systemReduced);
   if (typeof value !== 'object' || value === null) return defaults;
   const data: Record<string, unknown> = Object.fromEntries(Object.entries(value));
-  if (data.version !== undefined && data.version !== 1) return defaults;
+  if (data.version !== undefined && data.version !== 1 && data.version !== 2) return defaults;
   return {
-    version: 1,
+    version: 2,
     accent:
       data.accent === 'iris' || data.accent === 'foam' || data.accent === 'gold'
         ? data.accent
         : 'rose',
     glassOpacity:
       typeof data.glassOpacity === 'number' && Number.isFinite(data.glassOpacity)
-        ? Math.round(Math.max(30, Math.min(90, data.glassOpacity)))
+        ? data.version === 1 && data.glassOpacity === 56
+          ? defaults.glassOpacity
+          : Math.round(Math.max(GLASS_TINT_MIN, Math.min(GLASS_TINT_MAX, data.glassOpacity)))
         : defaults.glassOpacity,
     density: data.density === 'compact' ? 'compact' : 'comfortable',
     sidebarCollapsed:
@@ -59,8 +63,14 @@ export function normalizeAppearance(value: unknown, systemReduced = false): Appe
 
 export function loadAppearance(storage: Storage, systemReduced: boolean): AppearancePreferences {
   try {
-    const saved = storage.getItem('vessel:appearance:v1');
+    const saved = storage.getItem('vessel:appearance:v2');
     if (saved) return normalizeAppearance(JSON.parse(saved), systemReduced);
+    const legacy = storage.getItem('vessel:appearance:v1');
+    if (legacy) {
+      const migrated = normalizeAppearance(JSON.parse(legacy), systemReduced);
+      saveAppearance(storage, migrated);
+      return migrated;
+    }
     return defaultAppearance(storage.getItem('vessel:opaque') === 'true' || systemReduced);
   } catch {
     return defaultAppearance(systemReduced);
@@ -69,7 +79,7 @@ export function loadAppearance(storage: Storage, systemReduced: boolean): Appear
 
 export function saveAppearance(storage: Storage, preferences: AppearancePreferences) {
   try {
-    storage.setItem('vessel:appearance:v1', JSON.stringify(preferences));
+    storage.setItem('vessel:appearance:v2', JSON.stringify(preferences));
   } catch {
     /* The controls still work for this session when persistence is unavailable. */
   }

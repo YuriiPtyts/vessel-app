@@ -1,4 +1,4 @@
-//! The only unsafe boundary. Each handle and its loaded library stay on one playback thread.
+//! Playback's unsafe boundary. Each handle and its loaded library stay on one playback thread.
 use std::{
     ffi::{CString, c_char, c_int, c_void},
     ptr::NonNull,

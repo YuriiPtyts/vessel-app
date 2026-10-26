@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { buildExtractor } from './build-extractor.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(await readFile(join(root, 'native-dependencies.json'), 'utf8'));
@@ -29,7 +30,7 @@ for (const dependency of manifest.dependencies) {
   const archive = join(cache, `${dependency.name}-${dependency.sha256}`);
   let valid = false;
   try {
-    valid = await hash(archive) === dependency.sha256;
+    valid = (await hash(archive)) === dependency.sha256;
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
@@ -41,7 +42,7 @@ for (const dependency of manifest.dependencies) {
     const temporary = `${archive}.partial`;
     try {
       await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary));
-      if (await hash(temporary) !== dependency.sha256) {
+      if ((await hash(temporary)) !== dependency.sha256) {
         throw new Error(`Checksum mismatch for ${dependency.name}; refusing to use the artifact.`);
       }
       await rename(temporary, archive);
@@ -51,7 +52,20 @@ for (const dependency of manifest.dependencies) {
   }
 
   const destination = join(runtime, dependency.file);
-  if (dependency.zipEntry) {
+  if (dependency.build === 'yt-dlp-onedir') {
+    await buildExtractor(dependency, archive, destination, cache);
+    const legacy = join(runtime, 'yt-dlp');
+    try {
+      if (
+        (await hash(legacy)) === '7a6fe71d7d680f1fb0ac18d4949873d77db2859e90017c0f44bd94b23be4ee40'
+      )
+        await rm(legacy);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    console.log(`Verified ${dependency.name} ${dependency.version} directory runtime`);
+    continue;
+  } else if (dependency.zipEntry) {
     const extracted = join(cache, `${dependency.name}-extracted`);
     await mkdir(extracted, { recursive: true });
     execFileSync('/usr/bin/ditto', ['-x', '-k', archive, extracted]);
@@ -61,10 +75,19 @@ for (const dependency of manifest.dependencies) {
   }
   await chmod(destination, dependency.executable ? 0o755 : 0o644);
   if (dependency.name === 'libmpv') {
-    const linked = execFileSync('/usr/bin/otool', ['-arch', 'arm64', '-L', destination], { encoding: 'utf8' })
-      .split('\n').slice(2).map((line) => line.trim().split(' (')[0]).filter(Boolean);
-    if (linked.some((path) => !path.startsWith('/System/Library/') && !path.startsWith('/usr/lib/'))) {
-      throw new Error('libmpv references non-system libraries; refusing a non-self-contained runtime.');
+    const linked = execFileSync('/usr/bin/otool', ['-arch', 'arm64', '-L', destination], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .slice(2)
+      .map((line) => line.trim().split(' (')[0])
+      .filter(Boolean);
+    if (
+      linked.some((path) => !path.startsWith('/System/Library/') && !path.startsWith('/usr/lib/'))
+    ) {
+      throw new Error(
+        'libmpv references non-system libraries; refusing a non-self-contained runtime.',
+      );
     }
   }
   console.log(`Verified ${dependency.name} ${dependency.version}`);

@@ -1,7 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     process::Stdio,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::Mutex,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -56,31 +57,139 @@ pub(crate) struct StreamSource {
     available_at: Option<f64>,
 }
 
+#[derive(Clone)]
 pub(crate) struct ResolvedTrack {
     pub inspection: TrackInspection,
     streams: BTreeMap<String, StreamSource>,
 }
 
+struct CachedStream {
+    key: String,
+    track: ResolvedTrack,
+    created: Instant,
+}
+
+pub(crate) struct Resolver {
+    paths: RuntimePaths,
+    client: reqwest::Client,
+    cache: Mutex<VecDeque<CachedStream>>,
+}
+
+impl Resolver {
+    pub fn new(paths: RuntimePaths) -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .https_only(true)
+            .timeout(Duration::from_secs(5))
+            .build()
+            .map_err(|_| AppError::internal())?;
+        Ok(Self {
+            paths,
+            client,
+            cache: Mutex::new(VecDeque::new()),
+        })
+    }
+
+    pub async fn resolve(&self, input: &str) -> Result<ResolvedTrack> {
+        let key = canonical_track_url(input)?;
+        let cached = {
+            let mut cache = self.cache.lock().map_err(|_| AppError::internal())?;
+            cache.retain(|entry| {
+                entry.created.elapsed() < Duration::from_secs(300)
+                    && entry.track.has_unexpired_urls()
+            });
+            cache
+                .iter()
+                .find(|entry| entry.key == key)
+                .map(|entry| entry.track.clone())
+        };
+        if let Some(cached) = cached
+            && self.probe(&cached).await.is_ok()
+        {
+            return Ok(cached);
+        }
+        let mut last_error = AppError::internal();
+        // One tested client avoids the default's multi-client/JS work and delayed URLs.
+        // The ordinary resolver remains the compatibility fallback, with its timing rules intact.
+        for profile in [Some("visionos"), None] {
+            let result = resolve_profile(&self.paths, &key, profile).await;
+            match result {
+                Ok(track) => match self.probe(&track).await {
+                    Ok(()) => {
+                        let mut cache = self.cache.lock().map_err(|_| AppError::internal())?;
+                        cache.retain(|entry| entry.key != key);
+                        cache.push_front(CachedStream {
+                            key,
+                            track: track.clone(),
+                            created: Instant::now(),
+                        });
+                        cache.truncate(8);
+                        return Ok(track);
+                    }
+                    Err(error) => last_error = error,
+                },
+                Err(error) => last_error = error,
+            }
+        }
+        Err(last_error)
+    }
+
+    async fn probe(&self, track: &ResolvedTrack) -> Result<()> {
+        let source = track
+            .streams
+            .get(&track.inspection.recommended_format_id)
+            .ok_or_else(AppError::internal)?;
+        let mut request = self.client.get(&source.url);
+        for (name, value) in &source.headers {
+            request = request.header(name, value);
+        }
+        let response = request
+            .header(reqwest::header::RANGE, "bytes=0-1")
+            .send()
+            .await;
+        if response.is_ok_and(|response| response.status().is_success()) {
+            return Ok(());
+        }
+        Err(AppError::new(
+            "source_unavailable",
+            "YouTube could not open this audio source. Try playing the song again.",
+            true,
+        ))
+    }
+}
+
+impl StreamSource {
+    pub(crate) async fn wait_ready(&self) -> Result<()> {
+        tokio::time::sleep(availability_delay(
+            self.available_at.unwrap_or(0.0),
+            epoch_seconds()?,
+        )?)
+        .await;
+        Ok(())
+    }
+}
+
 impl ResolvedTrack {
     fn ready_in(&self, now: f64) -> Result<Duration> {
-        let wait = self
+        let ready = self
             .streams
-            .values()
-            .filter_map(|stream| stream.available_at)
-            .fold(now, f64::max)
-            - now;
-        if wait > 60.0 {
-            return Err(AppError::new(
-                "provider_delay",
-                "YouTube has not made this stream available yet. Try again later.",
-                true,
-            ));
-        }
-        Ok(Duration::from_secs_f64(if wait > 0.0 {
-            wait + 0.25
-        } else {
-            0.0
-        }))
+            .get(&self.inspection.recommended_format_id)
+            .and_then(|source| source.available_at)
+            .unwrap_or(now);
+        availability_delay(ready, now)
+    }
+
+    fn has_unexpired_urls(&self) -> bool {
+        let Ok(now) = epoch_seconds() else {
+            return false;
+        };
+        self.streams.values().all(|source| {
+            Url::parse(&source.url).ok().is_some_and(|url| {
+                url.query_pairs()
+                    .find(|(key, _)| key == "expire")
+                    .and_then(|(_, value)| value.parse::<f64>().ok())
+                    .is_none_or(|expiry| expiry > now + 120.0)
+            })
+        })
     }
 
     pub fn source(
@@ -159,7 +268,11 @@ pub fn canonical_track_url(input: &str) -> Result<String> {
     Ok(format!("https://www.youtube.com/watch?v={id}"))
 }
 
-pub(crate) async fn resolve(paths: &RuntimePaths, input: &str) -> Result<ResolvedTrack> {
+async fn resolve_profile(
+    paths: &RuntimePaths,
+    input: &str,
+    profile: Option<&str>,
+) -> Result<ResolvedTrack> {
     let canonical = canonical_track_url(input)?;
     let extractor = paths.require("yt-dlp")?;
     let deno = paths.require("deno")?;
@@ -185,7 +298,13 @@ pub(crate) async fn resolve(paths: &RuntimePaths, input: &str) -> Result<Resolve
             "bestaudio",
             "--js-runtimes",
         ])
-        .arg(format!("deno:{}", deno.display()))
+        .arg(format!("deno:{}", deno.display()));
+    if let Some(profile) = profile {
+        command
+            .arg("--extractor-args")
+            .arg(format!("youtube:player_client={profile}"));
+    }
+    command
         .arg("--")
         .arg(canonical)
         .stdin(Stdio::null())
@@ -205,41 +324,41 @@ pub(crate) async fn resolve(paths: &RuntimePaths, input: &str) -> Result<Resolve
     let group = ProcessGroup(child.id());
     let stdout = child.stdout.take().ok_or_else(AppError::internal)?;
     let stderr = child.stderr.take().ok_or_else(AppError::internal)?;
-    timeout(Duration::from_secs(75), async {
-        let mut metadata = Vec::new();
-        let mut diagnostics = Vec::new();
-        let mut stdout = stdout.take(MAX_METADATA + 1);
-        let mut stderr = stderr.take(MAX_DIAGNOSTICS + 1);
-        let (read_out, read_err, status) = tokio::join!(
-            stdout.read_to_end(&mut metadata),
-            stderr.read_to_end(&mut diagnostics),
-            child.wait()
-        );
-        read_out.map_err(|_| AppError::internal())?;
-        read_err.map_err(|_| AppError::internal())?;
-        let status = status.map_err(|_| AppError::internal())?;
-        // End the child-group lifetime before waiting for provider availability.
-        drop(group);
-        if metadata.len() as u64 > MAX_METADATA || diagnostics.len() as u64 > MAX_DIAGNOSTICS {
-            return Err(AppError::new(
-                "provider_response",
-                "The provider returned more data than this player can safely process.",
-                true,
-            ));
-        }
-        if !status.success() {
-            return Err(provider_error(&String::from_utf8_lossy(&diagnostics)));
-        }
-        let resolved = parse_metadata(&metadata)?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| AppError::internal())?
-            .as_secs_f64();
-        // Signed URLs can be returned before they become usable. Match yt-dlp's
-        // downloader by honoring the provider's available_at, not a hard-coded delay.
-        tokio::time::sleep(resolved.ready_in(now)?).await;
-        Ok(resolved)
-    })
+    timeout(
+        Duration::from_secs(if profile.is_some() { 15 } else { 75 }),
+        async {
+            let mut metadata = Vec::new();
+            let mut diagnostics = Vec::new();
+            let mut stdout = stdout.take(MAX_METADATA + 1);
+            let mut stderr = stderr.take(MAX_DIAGNOSTICS + 1);
+            let (read_out, read_err, status) = tokio::join!(
+                stdout.read_to_end(&mut metadata),
+                stderr.read_to_end(&mut diagnostics),
+                child.wait()
+            );
+            read_out.map_err(|_| AppError::internal())?;
+            read_err.map_err(|_| AppError::internal())?;
+            let status = status.map_err(|_| AppError::internal())?;
+            // End the child-group lifetime before waiting for provider availability.
+            drop(group);
+            if metadata.len() as u64 > MAX_METADATA || diagnostics.len() as u64 > MAX_DIAGNOSTICS {
+                return Err(AppError::new(
+                    "provider_response",
+                    "The provider returned more data than this player can safely process.",
+                    true,
+                ));
+            }
+            if !status.success() {
+                return Err(provider_error(&String::from_utf8_lossy(&diagnostics)));
+            }
+            let resolved = parse_metadata(&metadata)?;
+            let now = epoch_seconds()?;
+            // Signed URLs can be returned before they become usable. Match yt-dlp's
+            // downloader by honoring the provider's available_at, not a hard-coded delay.
+            tokio::time::sleep(resolved.ready_in(now)?).await;
+            Ok(resolved)
+        },
+    )
     .await
     .map_err(|_| {
         AppError::new(
@@ -248,6 +367,53 @@ pub(crate) async fn resolve(paths: &RuntimePaths, input: &str) -> Result<Resolve
             true,
         )
     })?
+}
+
+fn epoch_seconds() -> Result<f64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|time| time.as_secs_f64())
+        .map_err(|_| AppError::internal())
+}
+
+fn availability_delay(ready: f64, now: f64) -> Result<Duration> {
+    let wait = ready - now;
+    if wait > 60.0 {
+        return Err(AppError::new(
+            "provider_delay",
+            "YouTube has not made this stream available yet. Try again later.",
+            true,
+        ));
+    }
+    Ok(Duration::from_secs_f64(if wait > 0.0 {
+        wait + 0.25
+    } else {
+        0.0
+    }))
+}
+
+pub(crate) async fn warm_up(paths: &RuntimePaths) -> Result<()> {
+    let mut command = Command::new(paths.require("yt-dlp")?);
+    command
+        .args([
+            "--ignore-config",
+            "--no-plugin-dirs",
+            "--no-remote-components",
+            "--version",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command.spawn().map_err(|_| AppError::internal())?;
+    let _group = ProcessGroup(child.id());
+    timeout(Duration::from_secs(20), child.wait())
+        .await
+        .map_err(|_| AppError::internal())?
+        .map_err(|_| AppError::internal())?;
+    Ok(())
 }
 
 // Cancellation/timeouts terminate yt-dlp and its transient JavaScript runtime together.
@@ -525,5 +691,27 @@ mod tests {
         );
         assert_eq!(resolved.ready_in(1010.0).unwrap(), Duration::ZERO);
         assert_eq!(resolved.ready_in(900.0).unwrap_err().code, "provider_delay");
+    }
+
+    #[test]
+    fn unrelated_later_formats_do_not_delay_the_selected_audio() {
+        let resolved = parse_metadata(br#"{
+          "id":"test", "title":"Fixture", "format_id":"opus", "formats":[
+            {"format_id":"aac","url":"https://example.com/later","acodec":"aac","vcodec":"none","available_at":2000},
+            {"format_id":"opus","url":"https://example.com/audio","acodec":"opus","vcodec":"none","available_at":1006}
+          ]}"#).unwrap();
+        assert_eq!(
+            resolved.ready_in(1000.0).unwrap(),
+            Duration::from_millis(6250)
+        );
+    }
+
+    #[test]
+    fn expired_signed_sources_are_not_kept_as_replay_candidates() {
+        let data = serde_json::json!({"id":"test", "title":"Fixture", "formats":[{
+            "format_id":"opus", "url":"https://example.com/audio?expire=1", "acodec":"opus", "vcodec":"none"
+        }]});
+        let resolved = parse_metadata(&serde_json::to_vec(&data).unwrap()).unwrap();
+        assert!(!resolved.has_unexpired_urls());
     }
 }

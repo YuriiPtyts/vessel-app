@@ -1,6 +1,6 @@
-# Playback spike dependencies
+# Bundled playback dependencies
 
-These are pinned, checksum-verified development artifacts, bundled with the local feasibility app. End users must not need to install tools. The preparation script runs on the developer/build machine only. Downloaded binaries and archives are ignored by Git.
+Pinned, checksum-verified artifacts/source are bundled in the app. Preparation runs on the developer/build machine only. End users do not install tools. Native binaries, source archives, build virtual environments, and caches are ignored by Git.
 
 ## libmpv 0.41.0 (zapper build v0.41.0-1)
 
@@ -12,10 +12,12 @@ These are pinned, checksum-verified development artifacts, bundled with the loca
 
 ## yt-dlp 2026.10.21
 
-- Artifact/source: https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.21
-- Standalone macOS release contains GPL-licensed components and is distributed under GPLv3+. It is invoked as a separate process, not linked into Vessel.
+- Source tag: https://github.com/yt-dlp/yt-dlp/tree/2026.10.21. The complete tag archive (including build recipes) is pinned by SHA-256 in native-dependencies.json.
+- Build: Python 3.14, the upstream `bundle.pyinstaller --onedir --target-architecture arm64` recipe, generated lazy extractors, and upstream hash-pinned PyInstaller/default dependency lockfiles. No global packages are installed; the build environment is cached under `.cache/native/`.
+- The frozen directory runtime includes Python, standard modules, certificates, and required dependencies. It lives under `Resources/runtime/extractor/`; it is invoked as a separate process, not linked into Vessel. GPL-licensed components remain subject to their own redistribution terms.
 - License and dependency notices: https://github.com/yt-dlp/yt-dlp/blob/2026.10.21/THIRD_PARTY_LICENSES.txt
 - Full YouTube support uses the bundled EJS solver plus a JavaScript runtime. No permanent extraction daemon is introduced.
+- The previous single-file executable took roughly 7–8 seconds merely to print its version on the host. The directory runtime measured about 0.27–0.38 seconds after first-use loading. The published macOS ZIP inspected during the spike contained dependency resources without a usable entry executable, so the app builds the upstream directory layout rather than relying on that ZIP.
 
 ## Deno 2.9.8
 

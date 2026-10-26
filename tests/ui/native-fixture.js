@@ -62,6 +62,14 @@ export async function nativeFixture(page, options = {}) {
         channels: 2,
       },
     ];
+    const collectionItem = {
+      id: 'VLprovider_mix',
+      kind: 'playlist',
+      title: 'Provider Mix',
+      subtitle: 'Selected by YouTube Music',
+      thumbnailUrl: tracks[1].thumbnailUrl,
+      track: null,
+    };
     let library = { liked: [], recent: [] };
     let snapshot = {
       status: 'idle',
@@ -115,6 +123,27 @@ export async function nativeFixture(page, options = {}) {
             return structuredClone(snapshot);
           case 'local_library':
             return structuredClone(library);
+          case 'home_feed':
+            return {
+              personalized: false,
+              shelves: [
+                {
+                  id: 'provider-picks',
+                  title: options.homeTitle ?? 'Quick picks',
+                  items: tracks.map((track) => ({
+                    id: track.id,
+                    kind: 'song',
+                    title: track.title,
+                    subtitle: track.artist,
+                    thumbnailUrl: track.thumbnailUrl,
+                    track,
+                  })),
+                },
+                { id: 'provider-collections', title: 'Take it easy', items: [collectionItem] },
+              ],
+            };
+          case 'browse_collection':
+            return { item: collectionItem, tracks: structuredClone(tracks), hasMore: false };
           case 'search_music': {
             if (args.query === 'older request')
               await new Promise((resolve) => setTimeout(resolve, 400));

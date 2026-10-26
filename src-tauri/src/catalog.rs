@@ -12,6 +12,7 @@ use tokio::sync::{Semaphore, watch};
 
 use crate::{
     error::{AppError, Result},
+    home::{self, CollectionPage, CollectionTarget, HomeFeed},
     provider::{Track, artwork_url},
 };
 
@@ -52,6 +53,15 @@ struct CachedSearch {
     continuation: Option<String>,
     created: Instant,
 }
+struct CachedHome {
+    feed: HomeFeed,
+    targets: std::collections::BTreeMap<String, CollectionTarget>,
+    created: Instant,
+}
+struct CachedCollection {
+    page: CollectionPage,
+    continuation: Option<String>,
+}
 
 pub struct MusicCatalog {
     client: Client,
@@ -60,6 +70,8 @@ pub struct MusicCatalog {
     known_tracks: Mutex<VecDeque<Track>>,
     slot: Semaphore,
     cancellation: watch::Sender<u64>,
+    home: Mutex<Option<CachedHome>>,
+    collection: Mutex<Option<CachedCollection>>,
 }
 
 impl MusicCatalog {
@@ -80,6 +92,8 @@ impl MusicCatalog {
             known_tracks: Mutex::new(VecDeque::new()),
             slot: Semaphore::new(1),
             cancellation,
+            home: Mutex::new(None),
+            collection: Mutex::new(None),
         })
     }
 
@@ -113,6 +127,173 @@ impl MusicCatalog {
             result = self.search_inner(query, kind, more) => result,
             _ = cancel.changed() => Err(AppError::cancelled()),
         }
+    }
+
+    pub async fn home(&self, refresh: bool) -> Result<HomeFeed> {
+        let mut cancel = self.cancellation.subscribe();
+        self.cancel();
+        cancel.borrow_and_update();
+        tokio::select! { result = self.home_inner(refresh) => result, _ = cancel.changed() => Err(AppError::cancelled()) }
+    }
+
+    async fn home_inner(&self, refresh: bool) -> Result<HomeFeed> {
+        let _slot = self
+            .slot
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
+        if !refresh
+            && let Some(cached) = self
+                .home
+                .lock()
+                .map_err(|_| AppError::internal())?
+                .as_ref()
+                .filter(|cache| cache.created.elapsed() < Duration::from_secs(300))
+        {
+            return Ok(cached.feed.clone());
+        }
+        let context = self.context().await?;
+        let data = self
+            .browse_request(
+                json!({"context": context, "browseId": "FEmusic_home"}),
+                None,
+            )
+            .await?;
+        let (feed, targets) = home::parse_home(&data)?;
+        let tracks: Vec<_> = feed
+            .shelves
+            .iter()
+            .flat_map(|shelf| &shelf.items)
+            .filter_map(|item| item.track.clone())
+            .collect();
+        self.remember(&tracks)?;
+        *self.home.lock().map_err(|_| AppError::internal())? = Some(CachedHome {
+            feed: feed.clone(),
+            targets,
+            created: Instant::now(),
+        });
+        Ok(feed)
+    }
+
+    pub async fn collection(&self, id: &str, more: bool) -> Result<CollectionPage> {
+        let target = self
+            .home
+            .lock()
+            .map_err(|_| AppError::internal())?
+            .as_ref()
+            .and_then(|cache| cache.targets.get(id))
+            .cloned()
+            .ok_or_else(|| {
+                AppError::new(
+                    "stale_collection",
+                    "Refresh Listen now to open this collection again.",
+                    true,
+                )
+            })?;
+        let mut cancel = self.cancellation.subscribe();
+        self.cancel();
+        cancel.borrow_and_update();
+        tokio::select! { result = self.collection_inner(target, more) => result, _ = cancel.changed() => Err(AppError::cancelled()) }
+    }
+
+    async fn collection_inner(
+        &self,
+        target: CollectionTarget,
+        more: bool,
+    ) -> Result<CollectionPage> {
+        let _slot = self
+            .slot
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
+        let (previous, continuation) = if more {
+            let cache = self.collection.lock().map_err(|_| AppError::internal())?;
+            let cache = cache
+                .as_ref()
+                .filter(|cache| cache.page.item.id == target.item.id)
+                .ok_or_else(|| {
+                    AppError::new(
+                        "stale_collection",
+                        "Open this collection again to load more songs.",
+                        true,
+                    )
+                })?;
+            if cache.continuation.is_none() {
+                return Ok(cache.page.clone());
+            }
+            (cache.page.tracks.clone(), cache.continuation.clone())
+        } else {
+            (Vec::new(), None)
+        };
+        let context = self.context().await?;
+        let mut body = json!({"context":context, "browseId":target.item.id});
+        if let Some(params) = &target.params {
+            body["params"] = json!(params);
+        }
+        if let Some(token) = &continuation {
+            body["continuation"] = json!(token);
+        }
+        let data = self.browse_request(body, continuation.as_deref()).await?;
+        let (mut page, continuation) = home::parse_collection(&data, &target)?;
+        let mut tracks = previous;
+        let mut ids: BTreeSet<_> = tracks.iter().map(|track| track.id.clone()).collect();
+        tracks.extend(
+            page.tracks
+                .into_iter()
+                .filter(|track| ids.insert(track.id.clone())),
+        );
+        tracks.truncate(100);
+        page.tracks = tracks;
+        page.has_more = continuation.is_some() && page.tracks.len() < 100;
+        self.remember(&page.tracks)?;
+        *self.collection.lock().map_err(|_| AppError::internal())? = Some(CachedCollection {
+            page: page.clone(),
+            continuation,
+        });
+        Ok(page)
+    }
+
+    async fn browse_request(&self, body: Value, continuation: Option<&str>) -> Result<Value> {
+        let mut endpoint =
+            url::Url::parse(&format!("{ORIGIN}/youtubei/v1/browse?prettyPrint=false"))
+                .map_err(|_| catalog_error())?;
+        if let Some(token) = continuation {
+            endpoint
+                .query_pairs_mut()
+                .append_pair("ctoken", token)
+                .append_pair("continuation", token);
+        }
+        let version = body
+            .pointer("/context/client/clientVersion")
+            .and_then(Value::as_str)
+            .ok_or_else(catalog_error)?;
+        let response = self
+            .client
+            .post(endpoint)
+            .header("Origin", ORIGIN)
+            .header("Referer", format!("{ORIGIN}/"))
+            .header("X-YouTube-Client-Name", "67")
+            .header("X-YouTube-Client-Version", version)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|_| catalog_error())?;
+        let data: Value = serde_json::from_slice(&bounded_body(response, 4 * 1024 * 1024).await?)
+            .map_err(|_| catalog_error())?;
+        if data.get("error").is_some() {
+            return Err(catalog_error());
+        }
+        Ok(data)
+    }
+
+    fn remember(&self, tracks: &[Track]) -> Result<()> {
+        let mut known = self.known_tracks.lock().map_err(|_| AppError::internal())?;
+        for track in tracks {
+            known.retain(|previous| previous.id != track.id);
+            known.push_front(track.clone());
+        }
+        known.truncate(256);
+        Ok(())
     }
 
     async fn search_inner(
@@ -198,14 +379,7 @@ impl MusicCatalog {
             has_more: continuation.is_some() && tracks.len() < 100,
             tracks,
         };
-        {
-            let mut known = self.known_tracks.lock().map_err(|_| AppError::internal())?;
-            for track in &results.tracks {
-                known.retain(|previous| previous.id != track.id);
-                known.push_front(track.clone());
-            }
-            known.truncate(128);
-        }
+        self.remember(&results.tracks)?;
         *self.cache.lock().map_err(|_| AppError::internal())? = Some(CachedSearch {
             results: results.clone(),
             continuation,
@@ -284,7 +458,7 @@ fn parse_results(data: &Value, kind: SearchKind) -> Result<(Vec<Track>, Option<S
     let mut continuation = None;
     walk(contents, &mut |value| {
         if let Some(item) = value.get("musicResponsiveListItemRenderer")
-            && let Some(track) = parse_track(item, kind)
+            && let Some(track) = parse_track(item, Some(kind))
         {
             tracks.push(track);
         }
@@ -302,7 +476,7 @@ fn parse_results(data: &Value, kind: SearchKind) -> Result<(Vec<Track>, Option<S
     Ok((tracks, continuation))
 }
 
-fn parse_track(item: &Value, kind: SearchKind) -> Option<Track> {
+pub(crate) fn parse_track(item: &Value, kind: Option<SearchKind>) -> Option<Track> {
     if item
         .get("musicItemRendererDisplayPolicy")
         .and_then(Value::as_str)
@@ -322,10 +496,12 @@ fn parse_track(item: &Value, kind: SearchKind) -> Option<Track> {
             )
         })
         .and_then(Value::as_str);
-    if kind == SearchKind::Songs && video_type.is_some_and(|kind| kind != "MUSIC_VIDEO_TYPE_ATV") {
+    if kind == Some(SearchKind::Songs)
+        && video_type.is_some_and(|kind| kind != "MUSIC_VIDEO_TYPE_ATV")
+    {
         return None;
     }
-    if kind == SearchKind::Videos && video_type == Some("MUSIC_VIDEO_TYPE_ATV") {
+    if kind == Some(SearchKind::Videos) && video_type == Some("MUSIC_VIDEO_TYPE_ATV") {
         return None;
     }
     let id = item
@@ -373,6 +549,12 @@ fn parse_track(item: &Value, kind: SearchKind) -> Option<Track> {
     {
         artists.push(text.to_owned());
     }
+    if duration.is_none() {
+        duration = item
+            .pointer("/fixedColumns/0/musicResponsiveListItemFixedColumnRenderer/text/runs/0/text")
+            .and_then(Value::as_str)
+            .and_then(parse_duration);
+    }
     let thumbnail_url = item
         .pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
         .and_then(Value::as_array)
@@ -392,7 +574,7 @@ fn parse_track(item: &Value, kind: SearchKind) -> Option<Track> {
     })
 }
 
-fn walk(value: &Value, visit: &mut impl FnMut(&Value)) {
+pub(crate) fn walk(value: &Value, visit: &mut impl FnMut(&Value)) {
     visit(value);
     match value {
         Value::Object(map) => map.values().for_each(|value| walk(value, visit)),
@@ -431,7 +613,7 @@ fn parse_duration(text: &str) -> Option<f64> {
 fn catalog_error() -> AppError {
     AppError::new(
         "catalog_unavailable",
-        "YouTube Music search is unavailable right now. Check your connection and try again.",
+        "YouTube Music is unavailable right now. Check your connection and try again.",
         true,
     )
 }

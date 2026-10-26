@@ -3,6 +3,7 @@ import App from './App.svelte';
 import './app.css';
 import './lib/themes/duskfox.css';
 import './lib/glass.css';
+import './lib/home.css';
 
 const target = document.getElementById('app');
 

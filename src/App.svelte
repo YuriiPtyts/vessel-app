@@ -5,7 +5,6 @@
     AudioLines,
     ChevronRight,
     Clock3,
-    Compass,
     Heart,
     House,
     Library,
@@ -13,7 +12,6 @@
     Music2,
     Search,
     Settings2,
-    Sparkles,
     X,
   } from '@lucide/svelte';
   import Artwork from './lib/components/Artwork.svelte';
@@ -21,6 +19,7 @@
   import PlayerBar from './lib/components/PlayerBar.svelte';
   import AppearancePanel from './lib/components/AppearancePanel.svelte';
   import NowPlayingPanel from './lib/components/NowPlayingPanel.svelte';
+  import HomeView from './lib/components/HomeView.svelte';
   import {
     defaultAppearance,
     loadAppearance,
@@ -36,6 +35,8 @@
     getLibrary,
     getPlayback,
     getRuntimeReport,
+    getHomeFeed,
+    browseCollection,
     isCancelled,
     onPlayback,
     playSong,
@@ -54,17 +55,24 @@
     type SearchResults,
     type Track,
     type TrackInspection,
+    type HomeFeed,
+    type HomeItem,
+    type CollectionPage,
   } from './lib/native';
 
-  type View = 'home' | 'search' | 'liked' | 'recent';
+  type View = 'home' | 'search' | 'liked' | 'recent' | 'collection';
   let view = $state<View>('home');
   let report = $state<RuntimeReport | null>(null);
   let checking = $state(true);
   let error = $state<string | null>(null);
   let library = $state<LocalLibrary>({ liked: [], recent: [] });
-  let discovery = $state<Track[]>([]);
-  let discovering = $state(false);
-  let discoveryError = $state(false);
+  let home = $state<HomeFeed | null>(null);
+  let homeLoading = $state(false);
+  let homeError = $state(false);
+  let collection = $state<CollectionPage | null>(null);
+  let collectionLoading = $state(false);
+  let collectionMore = $state(false);
+  let collectionRevision = 0;
   let query = $state('');
   let kind = $state<SearchKind>('songs');
   let results = $state<SearchResults | null>(null);
@@ -107,19 +115,14 @@
   const currentIndex = $derived(
     context.findIndex((track) => track.id === (pending?.id ?? playback.track?.id)),
   );
-  const spotlight = $derived.by(() => {
-    const albums = new Set<string>();
-    return discovery
-      .filter((track) => {
-        const key = track.album ?? track.id;
-        if (albums.has(key)) return false;
-        albums.add(key);
-        return true;
-      })
-      .slice(0, 5);
-  });
   const listTracks = $derived(
-    view === 'liked' ? library.liked : view === 'recent' ? library.recent : (results?.tracks ?? []),
+    view === 'liked'
+      ? library.liked
+      : view === 'recent'
+        ? library.recent
+        : view === 'collection'
+          ? (collection?.tracks ?? [])
+          : (results?.tracks ?? []),
   );
 
   onMount(() => {
@@ -153,7 +156,7 @@
           unsubscribe = unlisten;
           playback = await getPlayback();
           await Promise.all([refreshLibrary(), setMaterialMode(appearance.reducedTransparency)]);
-          if (!disposed && view === 'home') void discover();
+          if (!disposed && view === 'home') void loadHome();
         }
       } catch (failure) {
         if (!disposed) error = errorMessage(failure);
@@ -177,15 +180,39 @@
     }
   }
 
-  async function discover() {
-    discovering = true;
-    discoveryError = false;
+  async function loadHome(refresh = false) {
+    if (!report || homeLoading) return;
+    homeLoading = true;
+    homeError = false;
     try {
-      discovery = (await searchMusic('Khruangbin')).tracks;
+      home = await getHomeFeed(refresh);
     } catch (failure) {
-      if (!isCancelled(failure)) discoveryError = true;
+      if (!isCancelled(failure)) homeError = true;
     } finally {
-      discovering = false;
+      homeLoading = false;
+    }
+  }
+
+  async function openCollection(item: HomeItem, more = false) {
+    if (!report) return;
+    const revision = ++collectionRevision;
+    view = 'collection';
+    error = null;
+    if (more) collectionMore = true;
+    else {
+      collection = { item, tracks: [], hasMore: false };
+      collectionLoading = true;
+    }
+    try {
+      const page = await browseCollection(item.id, more);
+      if (revision === collectionRevision) collection = page;
+    } catch (failure) {
+      if (revision === collectionRevision && !isCancelled(failure)) error = errorMessage(failure);
+    } finally {
+      if (revision === collectionRevision) {
+        collectionLoading = false;
+        collectionMore = false;
+      }
     }
   }
 
@@ -193,7 +220,7 @@
     view = next;
     settingsOpen = false;
     if (next === 'search') searchInput?.focus();
-    if (next === 'home' && !discovery.length && !discovering && report) void discover();
+    if (next === 'home' && !home && !homeLoading && report) void loadHome();
     if (next === 'liked' || next === 'recent') void refreshLibrary();
   }
 
@@ -520,99 +547,55 @@
       {/if}
 
       {#if view === 'home'}
-        <section class="home-heading">
+        <HomeView
+          feed={home}
+          loading={homeLoading}
+          failed={homeError}
+          connected={Boolean(report)}
+          pendingId={pending?.id}
+          onrefresh={() => void loadHome(true)}
+          onplay={(track, tracks) => void select(track, tracks)}
+          onbrowse={(item) => void openCollection(item)}
+        />
+      {:else if view === 'collection' && collection}
+        <section class="provider-collection-heading">
+          <Artwork url={collection.item.thumbnailUrl} className="collection-page-art" size={256} />
           <div>
-            <p class="eyebrow">MAKE YOURSELF AT HOME</p>
-            <h1>A good day for good music<span>.</span></h1>
-          </div>
-          <span class="quiet-badge"><span></span>Just music. Nothing extra.</span>
-        </section>
-        <section class="discovery-hero" aria-labelledby="hero-title">
-          <div class="hero-copy">
-            <span class="hero-kicker"><Sparkles size={13} /> A LITTLE DISCOVERY</span>
-            <h2 id="hero-title">Less noise.<br />More <em>feeling.</em></h2>
-            <p>The songs you came for.<br />The ones you haven't met yet.</p>
-            <button class="primary-button" onclick={() => navigate('search')}
-              ><Search size={15} />Find your music<ArrowRight size={15} /></button
+            <button class="text-button" onclick={() => navigate('home')}
+              >YouTube Music<ChevronRight size={12} /></button
             >
-          </div>
-          <div class="hero-art" aria-hidden="true">
-            <div class="vinyl"><span></span></div>
-            <div class="floating-sleeve sleeve-back">
-              <Artwork url={spotlight[1]?.thumbnailUrl} />
-            </div>
-            <div class="floating-sleeve sleeve-front">
-              <Artwork url={spotlight[0]?.thumbnailUrl} /><span class="sleeve-label"
-                >a little out of the ordinary.</span
-              >
-            </div>
-            <span class="hero-orbit orbit-one"></span><span class="hero-orbit orbit-two"></span>
-          </div>
-          <span class="hero-edition">THE EVERYDAY LISTENING EDITION — 001</span>
-        </section>
-        <section class="mood-section" aria-labelledby="mood-title">
-          <div class="section-heading">
-            <h2 id="mood-title">Find your frequency</h2>
-            <span>Follow a feeling</span>
-          </div>
-          <div class="mood-grid">
-            {#each [{ label: 'Slow mornings', query: 'mellow morning acoustic', tone: 'peach', icon: '☀' }, { label: 'In the zone', query: 'ambient focus instrumental', tone: 'lavender', icon: '◌' }, { label: 'After hours', query: 'late night jazz', tone: 'blue', icon: '☾' }, { label: 'A little energy', query: 'indie dance', tone: 'green', icon: '↗' }] as mood}
-              <button class="mood-card {mood.tone}" onclick={() => find(mood.query)}
-                ><span class="mood-symbol">{mood.icon}</span><span>{mood.label}</span><ArrowRight
-                  size={14}
-                /></button
-              >
-            {/each}
+            <p class="eyebrow">{collection.item.kind}</p>
+            <h1>{collection.item.title}</h1>
+            <p>{collection.item.subtitle}</p>
           </div>
         </section>
-        <section class="spotlight-section" aria-labelledby="spotlight-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">ARTIST SPOTLIGHT</p>
-              <h2 id="spotlight-title">A detour with Khruangbin</h2>
-            </div>
-            <button class="text-button" onclick={() => find('Khruangbin')}
-              >Explore artist<ArrowRight size={14} /></button
-            >
+        {#if collectionLoading}<div class="empty-collection" role="status">
+            <LoaderCircle size={24} class="spin" />
+            <p>Loading songs from YouTube Music…</p>
           </div>
-          {#if discovering}<div class="album-grid" aria-label="Loading music">
-              {#each [1, 2, 3, 4, 5] as card (card)}<div class="card-skeleton">
-                  <div class="skeleton"></div>
-                  <span class="skeleton"></span>
-                </div>{/each}
-            </div>
-          {:else if spotlight.length}<div class="album-grid">
-              {#each spotlight as track (track.id)}<button
-                  class="music-card"
-                  onclick={() => select(track, discovery)}
-                  aria-label={`Play ${track.title}`}
-                  ><span class="music-card-art"
-                    ><Artwork url={track.thumbnailUrl} /><span class="card-play"
-                      >{#if pending?.id === track.id}<LoaderCircle
-                          size={20}
-                          class="spin"
-                        />{:else}<Music2 size={19} />{/if}</span
-                    ></span
-                  ><strong>{track.title}</strong><span>{track.artist}</span></button
-                >{/each}
-            </div>
-          {:else}<div class="spotlight-empty">
-              <Compass size={23} />
-              <p>
-                {discoveryError
-                  ? 'Discovery is taking a little break. Your next favorite is still a search away.'
-                  : 'A world of music is a search away.'}
-              </p>
-              {#if report}<button class="text-button" onclick={discover}
-                  >Try discovery again<ArrowRight size={13} /></button
-                >{/if}
+        {:else if collection.tracks.length}<TrackList
+            tracks={collection.tracks}
+            activeId={playback.track?.id}
+            {playing}
+            pendingId={pending?.id}
+            {likedIds}
+            onplay={(track) => void select(track)}
+            onlike={(track) => void like(track)}
+            onartist={find}
+          />{#if collection.hasMore}<div class="load-more">
+              <button
+                class="secondary-button"
+                disabled={collectionMore}
+                onclick={() => {
+                  if (collection) void openCollection(collection.item, true);
+                }}>{collectionMore ? 'Loading songs…' : 'Show more songs'}</button
+              >
             </div>{/if}
-        </section>
-        <div class="home-signoff">
-          <AudioLines size={15} /><span>Your music, a little lighter.</span><span
-            class="signoff-line"
-          ></span><span>Vessel</span>
-        </div>
+        {:else}<div class="empty-collection">
+            <Music2 size={30} />
+            <h2>No playable songs were returned.</h2>
+            <p>Try another collection or refresh Listen now.</p>
+          </div>{/if}
       {:else if view === 'search'}
         <section class="page-heading">
           <p class="eyebrow">THE MUSIC YOU'RE LOOKING FOR</p>
@@ -678,11 +661,9 @@
             <p>
               A favorite artist. A half-remembered lyric.<br />Start with whatever's on your mind.
             </p>
-            <div class="suggestion-chips">
-              {#each ['Daft Punk', 'Sade', 'Tame Impala', 'Khruangbin'] as artist}<button
-                  onclick={() => find(artist)}>{artist}<ArrowRight size={12} /></button
-                >{/each}
-            </div>
+            <button class="secondary-button" onclick={() => navigate('home')}
+              >Explore YouTube Music<ArrowRight size={14} /></button
+            >
           </div>{/if}
       {:else}
         <section class="collection-heading">

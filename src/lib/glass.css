@@ -1,6 +1,6 @@
 /* Shared materials consume semantic theme tokens. No full-window CSS blur layer. */
 .app-frame {
-  --glass-opacity: 0.56;
+  --glass-opacity: 0.18;
   color: var(--theme-text);
   background: rgb(var(--theme-bg-rgb) / var(--glass-opacity));
 }
@@ -11,11 +11,20 @@
     transparent 56%
   );
 }
+.app-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(var(--theme-foreground-rgb) / 0.2);
+  box-shadow: inset 0 1px rgb(var(--theme-foreground-rgb) / 0.14);
+  pointer-events: none;
+  z-index: 40;
+}
 .main-stage {
   background: transparent;
 }
 .sidebar {
-  background: rgb(var(--theme-surface-rgb) / 0.25);
+  background: rgb(var(--theme-surface-rgb) / 0.08);
   border-color: var(--border);
 }
 .topbar {
@@ -79,6 +88,12 @@
   background: rgb(var(--theme-surface-rgb) / 0.18);
   border-color: var(--border);
   color: var(--theme-secondary);
+  border-radius: 16px;
+  background: linear-gradient(
+    130deg,
+    rgb(var(--theme-foreground-rgb) / 0.09),
+    rgb(var(--theme-surface-rgb) / 0.045)
+  );
 }
 .search-field:focus-within {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
@@ -240,13 +255,18 @@
   color: var(--theme-text);
 }
 .floating-player {
-  background: rgb(var(--theme-elevated-rgb) / 0.58);
+  background: linear-gradient(
+    130deg,
+    rgb(var(--theme-foreground-rgb) / 0.12),
+    rgb(var(--theme-elevated-rgb) / 0.18)
+  );
   border-color: rgb(var(--theme-foreground-rgb) / 0.18);
   box-shadow:
     inset 0 1px rgb(var(--theme-foreground-rgb) / 0.12),
     0 14px 40px rgb(var(--theme-surface-rgb) / 0.24);
   -webkit-backdrop-filter: blur(24px) saturate(125%);
   backdrop-filter: blur(24px) saturate(125%);
+  border-radius: 22px;
 }
 .now-playing h2 {
   color: var(--theme-text);
@@ -268,7 +288,7 @@
 }
 .quality-popover,
 .appearance-popover {
-  background: rgb(var(--theme-surface-rgb) / 0.98);
+  background: rgb(var(--theme-surface-rgb) / 0.9);
   border-color: rgb(var(--theme-foreground-rgb) / 0.16);
   box-shadow:
     inset 0 1px rgb(var(--theme-foreground-rgb) / 0.08),
@@ -502,7 +522,7 @@
   min-width: 0;
   padding: 95px 22px 145px;
   border-left: 1px solid var(--border);
-  background: rgb(var(--theme-surface-rgb) / 0.2);
+  background: rgb(var(--theme-surface-rgb) / 0.08);
   overflow-y: auto;
   scrollbar-width: thin;
 }

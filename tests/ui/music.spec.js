@@ -97,7 +97,7 @@ test('Duskfox is the default and appearance choices survive a restart', async ({
   await expect(page.getByRole('switch', { name: /Now playing artwork/ })).not.toBeChecked();
   await page.getByRole('button', { name: 'Reset appearance' }).click();
   await expect(frame).toHaveClass(/accent-rose/);
-  await expect(page.getByRole('slider', { name: 'Glass tint' })).toHaveValue('56');
+  await expect(page.getByRole('slider', { name: 'Glass tint' })).toHaveValue('18');
   await expect(page.getByRole('switch', { name: /Now playing artwork/ })).toBeChecked();
 });
 
@@ -142,7 +142,7 @@ test('searches by artist, plays a result directly, and keeps quality controls in
 }) => {
   await nativeFixture(page);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'A good day for good music.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Listen now.', exact: true })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search music' }).fill('Daft Punk');
   await page.getByRole('searchbox', { name: 'Search music' }).press('Enter');
   await expect(page.getByRole('heading', { name: 'Results for “Daft Punk”' })).toBeVisible();
@@ -223,8 +223,8 @@ test('home discovery, appearance, and narrow layout remain usable', async ({ pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await page.getByRole('button', { name: 'After hours' }).click();
-  await expect(page.getByRole('heading', { name: 'Results for “late night jazz”' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open Provider Mix' }).click();
+  await expect(page.getByRole('heading', { name: 'Provider Mix', exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('narrow.png'), fullPage: true });
 });
 
@@ -239,4 +239,67 @@ test('late responses cannot overwrite a newer search', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Results for “newer request”' })).toBeVisible();
   await page.waitForTimeout(500);
   await expect(page.getByRole('heading', { name: 'Results for “newer request”' })).toBeVisible();
+});
+
+test('Listen now uses provider shelves and collection targets without a fixed artist search', async ({
+  page,
+}) => {
+  await nativeFixture(page, { homeTitle: 'Server-selected recommendations' });
+  await page.goto('/');
+  await expect(
+    page.getByRole('heading', { name: 'Server-selected recommendations' }),
+  ).toBeVisible();
+  await expect(page.getByText('Guest recommendations', { exact: true })).toBeVisible();
+  await expect(page.getByText('A detour with Khruangbin')).toHaveCount(0);
+  expect(
+    await page.evaluate(() => window.__vesselCalls.some((call) => call.command === 'search_music')),
+  ).toBe(false);
+  await page.getByRole('button', { name: 'Open Provider Mix' }).click();
+  await expect(page.getByRole('heading', { name: 'Provider Mix', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play Instant Crush', exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      window.__vesselCalls.some(
+        (call) => call.command === 'browse_collection' && call.args.id === 'VLprovider_mix',
+      ),
+    ),
+  ).toBe(true);
+});
+
+test('clear glass upgrades the previous default tint and preserves layout choices', async ({
+  page,
+}) => {
+  await nativeFixture(page);
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'vessel:appearance:v1',
+      JSON.stringify({
+        version: 1,
+        accent: 'foam',
+        glassOpacity: 56,
+        density: 'compact',
+        sidebarCollapsed: true,
+        showNowPlaying: false,
+        reducedTransparency: false,
+      }),
+    ),
+  );
+  await page.goto('/');
+  const frame = page.locator('.app-frame');
+  await expect(frame).toHaveClass(/accent-foam/);
+  await expect(frame).toHaveClass(/density-compact/);
+  await expect(frame).toHaveClass(/sidebar-compact/);
+  expect(
+    await frame.evaluate((element) =>
+      Number(getComputedStyle(element).getPropertyValue('--glass-opacity')),
+    ),
+  ).toBe(0.18);
+  expect(
+    await page
+      .locator('.main-stage')
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+  ).toBe('rgba(0, 0, 0, 0)');
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('vessel:appearance:v2')).version),
+  ).toBe(2);
 });

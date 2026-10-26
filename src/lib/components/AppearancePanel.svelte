@@ -1,6 +1,12 @@
 <script lang="ts">
   import { Check, RotateCcw, X } from '@lucide/svelte';
-  import { ACCENTS, DEFAULT_THEME, type AppearancePreferences } from '../appearance';
+  import {
+    ACCENTS,
+    DEFAULT_THEME,
+    GLASS_TINT_MIN,
+    GLASS_TINT_MAX,
+    type AppearancePreferences,
+  } from '../appearance';
   let {
     preferences,
     onchange,
@@ -55,11 +61,11 @@
     <input
       id="glass-opacity"
       type="range"
-      min="30"
-      max="90"
+      min={GLASS_TINT_MIN}
+      max={GLASS_TINT_MAX}
       step="1"
       value={preferences.glassOpacity}
-      style:--range-progress={`${((preferences.glassOpacity - 30) / 60) * 100}%`}
+      style:--range-progress={`${((preferences.glassOpacity - GLASS_TINT_MIN) / (GLASS_TINT_MAX - GLASS_TINT_MIN)) * 100}%`}
       disabled={preferences.reducedTransparency}
       oninput={(event) => onchange({ glassOpacity: event.currentTarget.valueAsNumber }, false)}
       onchange={() => onchange({})}

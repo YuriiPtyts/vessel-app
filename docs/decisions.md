@@ -10,6 +10,12 @@ The owner explicitly rejected the link-inspection lab as the main experience. No
 
 The owner requested real-time volume during dragging, a more transparent glass treatment, their current Zed theme's palette as the default, persistent interface customization, and prominent track artwork. The detected palette is Duskfox – blurred. Additional complete themes are an explicit future goal; see themes.md. The owner also requested that completed, verified changes be committed and pushed automatically; this workflow is recorded in AGENTS.md.
 
+## Provider recommendations, fast startup, and desktop glass
+
+The owner rejected the fixed artist spotlight and asked for YouTube Music's actual recommendations. Home now reads the guest `FEmusic_home` response, preserving provider shelves and order; recommendation collections open their real track lists. Do not substitute hard-coded artists or mood searches when the feed is unavailable. Guest recommendations must remain clearly distinct from signed-in personalization.
+
+The owner also asked for substantially faster songs and stronger real-desktop transparency, using GlassPlayer as a visual reference. The chosen direction is a directory-based frozen extractor, a validated fast client with ordinary-client fallback, bounded URL caching, background native warm-up, clear AppKit glass, and a lower default tint. See startup-and-materials.md for observed results and remaining limits.
+
 ## Confirmed
 
 1. Polish macOS first. Add other operating systems in future milestones.

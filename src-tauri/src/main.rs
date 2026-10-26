@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+mod native_diagnostics;
+
 use serde::Serialize;
 use tauri::Manager;
 use vessel_app::{
@@ -11,6 +14,27 @@ use vessel_app::{
     provider::TrackInspection,
     runtime::RuntimePaths,
 };
+
+fn vessel_diagnostic_error() -> vessel_app::error::AppError {
+    vessel_app::error::AppError::new(
+        "diagnostics_unavailable",
+        "Native diagnostics are not enabled for this run.",
+        false,
+    )
+}
+
+#[tauri::command]
+fn native_material_probe(window: tauri::WebviewWindow, probe: serde_json::Value) -> Result<()> {
+    #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+    {
+        native_diagnostics::report(window, probe)
+    }
+    #[cfg(not(all(target_os = "macos", feature = "native-diagnostics")))]
+    {
+        let _ = (window, probe);
+        Err(vessel_diagnostic_error())
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +65,23 @@ async fn play_song(
 }
 
 #[tauri::command]
+async fn home_feed(
+    state: tauri::State<'_, Application>,
+    refresh: bool,
+) -> Result<vessel_app::home::HomeFeed> {
+    state.home(refresh).await
+}
+
+#[tauri::command]
+async fn browse_collection(
+    state: tauri::State<'_, Application>,
+    id: String,
+    more: bool,
+) -> Result<vessel_app::home::CollectionPage> {
+    state.collection(&id, more).await
+}
+
+#[tauri::command]
 async fn local_library(state: tauri::State<'_, Application>) -> Result<LibrarySnapshot> {
     state.library()
 }
@@ -63,7 +104,8 @@ async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Resul
         } else {
             Some(
                 EffectsBuilder::new()
-                    .effect(Effect::Sidebar)
+                    .effect(Effect::LiquidGlassClear)
+                    .effect(Effect::HudWindow)
                     .state(EffectState::FollowsWindowActiveState)
                     .build(),
             )
@@ -146,30 +188,49 @@ async fn stop_playback(state: tauri::State<'_, Application>) -> Result<PlaybackS
 }
 
 fn main() {
-    let app = tauri::Builder::default()
-        .setup(|app| {
-            use tauri::Emitter;
-            let root = if cfg!(debug_assertions) {
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime")
-            } else {
-                app.path().resource_dir()?.join("runtime")
-            };
-            let handle = app.handle().clone();
-            let library = std::sync::Arc::new(LocalLibrary::open(
-                app.path().app_data_dir()?.join("collection.json"),
-            ));
-            app.manage(Application::with_library(
-                RuntimePaths::new(root),
-                library,
-                move |snapshot| {
-                    let _ = handle.emit("playback-state", snapshot);
-                },
-            )?);
-            Ok(())
-        })
+    let builder = tauri::Builder::default().setup(|app| {
+        use tauri::Emitter;
+        let root = if cfg!(debug_assertions) {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime")
+        } else {
+            app.path().resource_dir()?.join("runtime")
+        };
+        #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+        let root = std::env::var_os("VESSEL_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or(root);
+        let handle = app.handle().clone();
+        let library = std::sync::Arc::new(LocalLibrary::open(
+            app.path().app_data_dir()?.join("collection.json"),
+        ));
+        app.manage(Application::with_library(
+            RuntimePaths::new(root),
+            library,
+            move |snapshot| {
+                let _ = handle.emit("playback-state", snapshot);
+            },
+        )?);
+        let warm_handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            warm_handle.state::<Application>().warm_up().await;
+        });
+        Ok(())
+    });
+    #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+    let builder = builder.on_page_load(|webview, payload| {
+        if std::env::var_os("VESSEL_NATIVE_DIAGNOSTICS").is_some()
+            && payload.event() == tauri::webview::PageLoadEvent::Finished
+        {
+            let _ = webview.eval(native_diagnostics::PROBE_SCRIPT);
+        }
+    });
+    let app = builder
         .invoke_handler(tauri::generate_handler![
+            native_material_probe,
             runtime_report,
             search_music,
+            home_feed,
+            browse_collection,
             play_song,
             local_library,
             toggle_like,

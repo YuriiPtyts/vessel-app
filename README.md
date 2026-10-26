@@ -8,13 +8,13 @@ Search-first music app on Apple Silicon macOS, using Tauri 2, Rust, and Svelte 5
 
 - Search YouTube Music by song or artist name, with Songs/Music videos filters and paginated results.
 - Click a song or discovery card to play directly; resolution and format discovery happen behind the interface.
-- Browse a discovery home, save songs locally, and return to recently played music.
+- Browse YouTube Music's guest Home recommendations and open recommended playlist/album track lists; save songs locally and return to recently played music.
 - Use a persistent floating player; select available source quality from its compact popover.
 - Play through Rust-managed libmpv/CoreAudio; pause, resume, seek, stop, and adjust volume.
 - Change quality while preserving position and pause state.
 - Cancel in-flight resolution; receive actionable provider/stream failures without exposing signed URLs.
 
-The macOS shell uses native traffic lights, an overlay titlebar, semantic vibrancy, and a reduced-transparency option. Account support, separate album/artist detail pages, persistent queues, automatic recovery, and OS media controls are still pending. Likes and history are explicitly local to this Mac, not synchronized with YouTube Music. Recorded public tracks only; lossless requires a verified source.
+The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Account support, full album/artist browsers, persistent queues, automatic recovery, and OS media controls are still pending. Likes/history are local to this Mac; Home currently uses the guest provider feed rather than a signed-in account. Recorded public tracks only; lossless requires a verified source.
 
 ## Listening
 
@@ -24,18 +24,18 @@ Volume updates live while dragging, with bounded/coalesced native writes. Click 
 
 ## Appearance
 
-**Duskfox – blurred**, derived from the owner's active Zed palette, is the default. Open **Appearance** to change the accent, glass tint, transparency, song-list density, sidebar layout, and now-playing artwork panel. Choices persist across restarts and can be reset. See [appearance and the planned theme library](docs/themes.md).
+The **Duskfox** palette, derived from the owner's Zed theme, remains the default, now with a clear-glass material and 18% default tint. Open **Appearance** to change the accent, glass tint, transparency, song-list density, sidebar layout, and artwork panel. Choices persist across restarts and can be reset. See [appearance and the planned theme library](docs/themes.md).
 
 ## Development
 
-Requires Node.js, Rust, and Apple's developer tools on macOS. These are development requirements, not intended requirements for end users.
+Requires Node.js, Rust, Apple's developer tools, and Python 3.14 for the first frozen-extractor build on macOS. Set `VESSEL_BUILD_PYTHON` if that interpreter is not `python3`. These are development requirements; end users do not need Python or other tools installed.
 
 ```sh
 npm ci
 npm run tauri dev
 ```
 
-The macOS arm64 native runtime is prepared automatically for desktop development/builds. The first preparation downloads pinned, checksum-verified libmpv, yt-dlp, and Deno artifacts. It does not install system packages or require those tools on the end user's machine. See [dependency provenance and remaining release obligations](docs/native-dependencies.md).
+The macOS arm64 runtime is prepared automatically. It downloads checksum-verified libmpv/Deno artifacts and yt-dlp source, then makes a cached directory-based frozen extractor using the upstream build recipe and hash-pinned requirements. This avoids unpacking a Python runtime on each song. No system packages are installed. See [dependency provenance and remaining release obligations](docs/native-dependencies.md).
 
 Build and open the local app:
 
@@ -87,4 +87,4 @@ npm run test:ui
 
 See [confirmed decisions](docs/decisions.md), [architecture](docs/architecture.md), [feasibility plan](docs/feasibility.md), and [opportunity backlog](docs/opportunities.md).
 
-The [verification log](docs/verification.md) records real search/playback results, screenshots reviewed, local artifact sizes, and remaining release gates. Search took roughly 1–4 seconds in the observed runs. Initial song loading still misses the four-second first-play target; resolution remains a reliability/performance investigation.
+The [verification log](docs/verification.md) and [startup/native-material investigation](docs/startup-and-materials.md) record measurements and limits. The tested fast path reached decoded output in about 3.4 seconds with a warm runtime; a cached repeat took about 0.9 seconds. First-use platform loading and fallback extraction can take longer. These are observations, not p95 guarantees.

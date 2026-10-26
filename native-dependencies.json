@@ -14,12 +14,12 @@
     {
       "name": "yt-dlp",
       "version": "2026.10.21",
-      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.21/yt-dlp_macos",
-      "sha256": "7a6fe71d7d680f1fb0ac18d4949873d77db2859e90017c0f44bd94b23be4ee40",
-      "file": "yt-dlp",
-      "executable": true,
+      "url": "https://codeload.github.com/yt-dlp/yt-dlp/tar.gz/refs/tags/2026.10.21",
+      "sha256": "d3550322daafb24e1cddc55256fbc8b3b5886cdb5793444ff1ed7c08262a56fb",
+      "file": "extractor",
+      "build": "yt-dlp-onedir",
       "source": "https://github.com/yt-dlp/yt-dlp/tree/2026.10.21",
-      "license": "GPL-3.0-or-later standalone artifact; used as a separate process"
+      "license": "GPL-3.0-or-later frozen directory build; used as a separate process, with upstream hash-pinned build requirements"
     },
     {
       "name": "deno",

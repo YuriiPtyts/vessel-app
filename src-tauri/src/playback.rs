@@ -61,6 +61,7 @@ impl Default for PlaybackSnapshot {
 }
 
 enum Operation {
+    WarmUp,
     Load(Box<LoadRequest>),
     Pause(bool),
     Seek(f64),
@@ -141,6 +142,10 @@ impl Player {
     pub async fn pause(&self, paused: bool) -> Result<PlaybackSnapshot> {
         self.request(Operation::Pause(paused)).await
     }
+
+    pub async fn warm_up(&self) -> Result<PlaybackSnapshot> {
+        self.request(Operation::WarmUp).await
+    }
     pub async fn seek(&self, position: f64) -> Result<PlaybackSnapshot> {
         if !position.is_finite() || position < 0.0 {
             return Err(AppError::new(
@@ -200,7 +205,7 @@ fn worker(
             snapshot.status,
             PlaybackStatus::Loading | PlaybackStatus::Playing | PlaybackStatus::Buffering
         );
-        let request = if engine.is_none() {
+        let request = if engine.is_none() || snapshot.track.is_none() {
             receiver.recv().map_err(|_| RecvTimeoutError::Disconnected)
         } else {
             receiver.recv_timeout(Duration::from_millis(if active { 250 } else { 1000 }))
@@ -247,6 +252,11 @@ fn apply(
     snapshot: &mut PlaybackSnapshot,
 ) -> Result<()> {
     match operation {
+        Operation::WarmUp => {
+            if engine.is_none() {
+                *engine = Some(Mpv::open(paths)?);
+            }
+        }
         Operation::Load(request) => {
             let LoadRequest {
                 track,

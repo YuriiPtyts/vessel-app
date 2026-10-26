@@ -1,6 +1,6 @@
 # Appearance and future themes
 
-## Current default: Duskfox – blurred
+## Current default: Duskfox palette, clear-glass material
 
 The owner requested the colors of their active Zed theme. The configured dark theme was **Duskfox - blurred**, supplied by **Nightfox for Zed 0.10.5**. Vessel snapshots the relevant palette; it does not read or change Zed settings at runtime and does not require Zed to be installed.
 
@@ -25,14 +25,16 @@ Palette tokens live in `src/lib/themes/duskfox.css`. Shared material/layout styl
 ## Customization available now
 
 - Four Duskfox accent choices.
-- Live glass-tint adjustment from 30–90%, default 56%.
+- Live glass-tint adjustment from 8–90%, default 18%.
 - Reduced-transparency mode that removes native vibrancy and CSS backdrop filters.
 - Comfortable/compact song rows.
 - Expanded/compact navigation.
 - A now-playing artwork panel, enabled by default on wide windows. The player cover opens an overlay on smaller windows.
 - Reset to the defaults.
 
-Preferences are bounded/validated, versioned, and stored locally as `vessel:appearance:v1`. Existing `vessel:opaque` preferences migrate. Reduced-motion support remains active. The interface uses native macOS Sidebar material with a dark appearance, plus bounded player/popover CSS blur with WebKit-compatible prefixes.
+Preferences are bounded/validated and stored locally as `vessel:appearance:v2`. The previous default 56% tint migrates to 18%; non-default tint, accent, density, navigation, artwork, and reduced-transparency choices are retained. Existing `vessel:opaque` settings remain supported. Reduced motion remains active. Native clear Liquid Glass is used on macOS 26+, with HUD vibrancy on older systems and bounded WebKit-compatible player/popover blur.
+
+Visual material reference: https://github.com/Jonzu00/GlassPlayer. That project uses Windows Acrylic and translucent rounded panes. Vessel independently applies the layering/highlight ideas with AppKit and its Duskfox palette; no WPF source is incorporated. Desktop transparency comes from the native window/effect stack, while web tint and surface fills stay low enough to reveal it.
 
 ## Owner-requested future goal: additional themes
 
