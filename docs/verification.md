@@ -176,6 +176,37 @@ The owner requested keeping their account signed in across restarts. The origina
 
 Real Google password/2FA and a real account's server-side acceptance after restart still need owner verification. These account changes do not claim to fix the reported audible volume lag or matching libmpv/CoreAudio SIGSEGV; current evidence and limitations are in `audio-device-investigation.md`.
 
+## Genie reveals and CoreAudio initialization cleanup (2026-10-27)
+
+### Interface
+
+- Added a shared macOS-inspired genie reveal to appearance, account, queue, audio-quality, and now-playing surfaces. Curved clipping/perspective unfurls each newly mounted surface from its anchor; routine playback updates do not repeat it. Closing is immediate.
+- **18 mocked WebKit interface-contract tests** pass. New checks inspect real Web Animations keyframes, curved mid-reveal clipping, the settled layout and immediate close, and instant unwarped content with OS reduced motion enabled. A paused fixture screenshot was visually reviewed. This is not native compositor/power measurement.
+- Svelte diagnostics report zero errors/warnings; the production frontend builds (approximately **117 kB JS**, **59 kB CSS**, uncompressed in this run).
+
+### Targeted audio fix
+
+- A controlled native initialization-failure audit went red with the previous engine: CoreAudio returned the injected parameter error, playback fell back to AVFoundation, and **two device callbacks remained registered** for the failed driver context. This exercises the resource-lifetime pattern at the captured crash callback rather than merely asserting a backend name.
+- Rebuilt the LGPL engine as **0.41.0-vessel.1** with upstream #18383's cleanup backport and the v0.41.0 AudioUnit-pointer adaptation. The same audit passes with **zero** callbacks. All mpv/FFmpeg/MPVKit source archives, 17 static-dependency ZIP bundles, and the Meson build wheel are SHA-256 pinned; only system dynamic dependencies are accepted. Reuse validates the cached compiled file and recipe hash. No binary/cache is committed.
+- The deterministic audit passes with both the prepared runtime and the final `.app` runtime. A real muted CoreAudio/S16 stereo run passed **20/20** aggregate-device selection/removal cycles, verified original-output restoration, and observed advancing output after **116 ms** of the final recovery check.
+- Real guest Opus decoding, stable pause, seek, paused AAC quality change, resume/stop, and cancellation pass. Radio generated **50 tracks**, prepared the next source in **305 ms**, and advanced at natural EOF to decoded next-source output in **356 ms**. The warmed first-selection test observed **736 ms** in the prepared runtime and **728 ms** in the packaged runtime (packaged acknowledgement **121 ms**).
+- Final packaged guest regression observed **2.459 seconds** to its decoded/position threshold, including **567 ms** inspection. Native volume readback/sweep passed (**59 µs p95**, **85 µs max**, zero full-state events during 100 writes); those are acknowledgements, not proof that the previously reported audible volume delay is resolved.
+- Rust fmt, Clippy with warnings denied (default and diagnostic features), **33 ordinary library tests**, the binary IPC-origin test, and the non-network application check pass.
+- Normal macOS bundle generation passes. The installed app is **166.40 MiB**, versus 198.72 MiB before the arm64 engine rebuild. It launched for eight seconds with system-only PATH and quit normally via its own NSRunningApplication (`exit 0`, 301 captured output bytes).
+
+**Remaining hardware gate:** the owner reports physical AirPods output-switch crashes in addition to the analog 3.5 mm path. The matching listener-lifetime defect is fixed and covered by the controlled audit; a physical AirPods transition was not automated or certified. Restart into the rebuilt app and repeat that transition. Keep any distinct later crash signature separate. See `audio-device-investigation.md` for the evidence and `native-dependencies.md` for source/minimum-OS/distribution limits.
+
+## Beta candidate verification (2026-10-27)
+
+- Prepared version **0.1.0-beta.1** consistently across npm, Cargo, and Tauri metadata. The normal `npm run tauri -- build --bundles app` build passes; the installed Apple Silicon app is **166.40 MiB**. The ZIP is **80,887,565 bytes** (approximately **77.14 MiB**), passes archive integrity checks, and has a verified `SHA256SUMS` sidecar. Generated assets remain under ignored `.cache/releases/v0.1.0-beta.1/`.
+- Svelte diagnostics report zero errors/warnings, the production frontend builds, and all **18 mocked WebKit UI contract tests** pass. Prettier passes for the changed frontend, manifests, and release notes. Rust fmt, Clippy with warnings denied (default and `native-diagnostics`), **33 ordinary library tests**, the binary IPC-origin test, and the non-network application integration check pass for the beta version.
+- Against the actual beta `.app` runtime, the controlled initialization-failure audit leaves **zero** leaked CoreAudio callbacks. A real muted CoreAudio/S16 run completes **20/20** aggregate-device selection/removal cycles, verifies restoration of the original output, and observes continued advancement after **52 ms** in the final recovery check. These are not physical AirPods or analog-headphone acceptance checks.
+- With the beta `.app` runtime and `PATH=/usr/bin:/bin`, native volume property readback and a 100-write sweep pass (**40 µs p95**, **54 µs max**, zero full playback events). This measures acknowledgements, not audible gain latency.
+- The same system-only-PATH run passes real guest Opus decoding, pause/seek, paused AAC quality switching, resume/stop, and cancellation. The guest flow observes **2.368 seconds** to its decoded/position threshold, including **588 ms** inspection. Catalog selection observes **2.417 seconds**, with a **1.377-second** cached repeat. Live Home/collection browsing and search pagination pass. Native radio creates **50 tracks**, prepares the next source in **204 ms**, and advances from natural EOF to next decoded output in **356 ms**. These are individual muted host/network observations, not latency guarantees.
+- The beta-version diagnostic executable passes isolated native browser close/reopen, two-process fixture Keychain recovery after browser-data deletion, and explicit forgetting. Real Google authentication is not exercised.
+- The normal packaged beta app runs for eight seconds with a system-only PATH and quits through its own NSRunningApplication (`exit 0`, 301 captured output bytes). Its executable and libmpv are arm64, and the engine links only system dynamic dependencies.
+- **Publication remains blocked on the owner's original physical-audio checks:** no-crash/recovery behavior for actual AirPods and 3.5 mm transitions, and prompt audible volume changes. Prepare a private draft prerelease with the verified download; do not publish it or describe those symptoms as resolved until acceptance. See [beta notes](beta-release.md).
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.

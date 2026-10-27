@@ -1,6 +1,89 @@
 import { test, expect } from '@playwright/test';
 import { nativeFixture } from './native-fixture';
 
+test('transient surfaces use an anchored genie reveal and settle to their normal layout', async ({
+  page,
+}, testInfo) => {
+  await nativeFixture(page);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.addInitScript(() => {
+    const original = Element.prototype.animate;
+    window.__vesselReveals = [];
+    Element.prototype.animate = function (...args) {
+      const animation = original.apply(this, args);
+      if (
+        this.matches('.appearance-popover, .music-popover') &&
+        Number(animation.effect.getTiming().duration) > 0 &&
+        animation.effect.getKeyframes().some((frame) => frame.clipPath)
+      ) {
+        animation.pause();
+        animation.currentTime = 160;
+        window.__vesselReveals.push({ node: this, animation });
+      }
+      return animation;
+    };
+  });
+  await page.goto('/');
+  for (const [button, panel, close] of [
+    ['Appearance settings', 'Appearance settings', 'Close appearance settings'],
+    ['Open account settings', 'Google account', 'Close account settings'],
+    ['Show play queue', 'Play queue', 'Close play queue'],
+  ]) {
+    await page.getByRole('button', { name: button, exact: true }).click();
+    const surface = page.getByRole('region', { name: panel, exact: true });
+    await expect(surface).toBeVisible();
+    const sample = await surface.evaluate((node) => {
+      const reveal = window.__vesselReveals.findLast((entry) => entry.node === node);
+      return {
+        animated: Boolean(reveal),
+        transforms: reveal
+          ? new Set(
+              reveal.animation.effect
+                .getKeyframes()
+                .map((frame) => frame.transform ?? frame.webkitTransform),
+            ).size
+          : 0,
+        transform: getComputedStyle(node).transform,
+        clip: getComputedStyle(node).clipPath,
+      };
+    });
+    expect(sample.animated).toBe(true);
+    expect(sample.transforms, JSON.stringify(sample)).toBeGreaterThan(3);
+    expect(sample.transform).not.toBe('none');
+    expect(sample.clip).toContain('path(');
+    if (panel === 'Appearance settings') {
+      await page.screenshot({ path: testInfo.outputPath('genie-mid-reveal.png') });
+    }
+    await surface.evaluate((node) => {
+      window.__vesselReveals.findLast((entry) => entry.node === node).animation.finish();
+    });
+    await expect
+      .poll(() => surface.evaluate((node) => getComputedStyle(node).transform))
+      .toBe('none');
+    await page.getByRole('button', { name: close, exact: true }).click();
+    await expect(surface).toHaveCount(0);
+  }
+});
+
+test('reduced motion opens genie surfaces immediately without warping content', async ({
+  page,
+}) => {
+  await nativeFixture(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Appearance settings', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Appearance settings', exact: true });
+  await expect(panel).toBeVisible();
+  expect(
+    await panel.evaluate((node) => ({
+      transform: getComputedStyle(node).transform,
+      clip: getComputedStyle(node).clipPath,
+      animations: node.getAnimations().filter((animation) => animation.playState === 'running')
+        .length,
+    })),
+  ).toEqual({ transform: 'none', clip: 'none', animations: 0 });
+});
+
 test('changes volume while the pointer is still held down', async ({ page }) => {
   await nativeFixture(page);
   await page.setViewportSize({ width: 1400, height: 900 });

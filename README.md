@@ -24,13 +24,17 @@ Search in the top bar (or press Command-K), then click a result to play. The hea
 
 Open **Up next** using the player's queue icon to choose/remove songs, clear the queue, or turn off **Autoplay radio**. Turning radio off still lets already-queued songs finish. Up to 100 tracks and the radio preference survive a restart; playback resumes only when requested. Previous restarts the current song after three seconds, otherwise returning to the previous item.
 
-Use the top-right avatar or sidebar session label for **Account**. **Connect Google** opens Google's own page in an ephemeral native window. Closing/cancelling it leaves guest listening available. Sign-out removes Vessel's saved Keychain session and stops playback while retaining local likes, history, queue, and appearance. See [radio and account behavior, verification, and remaining account QA](docs/radio-and-accounts.md).
+Use the top-right avatar or sidebar session label for **Account**. **Connect Google** opens Google's own page in an isolated native window. Remembered sign-in data is restored from macOS Keychain and must be verified before authenticated requests resume. Closing/cancelling the window leaves guest listening available. Sign-out removes Vessel's saved Keychain session and isolated browser data, and stops playback while retaining local likes, history, queue, and appearance. See [radio and account behavior, verification, and remaining account QA](docs/radio-and-accounts.md).
 
 Volume updates live while dragging, with bounded/coalesced native writes. Click the player's cover for a larger now-playing picture; on wide windows the artwork panel is shown by default. The app uses provider artwork and falls back to the original thumbnail when a higher-resolution image is unavailable.
 
 ## Appearance
 
-The **Duskfox** palette, derived from the owner's Zed theme, remains the default, now with a clear-glass material and 18% default tint. Open **Appearance** to change the accent, glass tint, transparency, song-list density, sidebar layout, and artwork panel. Choices persist across restarts and can be reset. See [appearance and the planned theme library](docs/themes.md).
+The **Duskfox** palette, derived from the owner's Zed theme, remains the default, with a clear-glass material and 50% default tint. Open **Appearance** to change the accent, glass tint (50–100%), transparency, song-list density, sidebar layout, and artwork panel. Choices persist across restarts and can be reset. Transient panels use a short genie-style reveal that respects the system's reduced-motion preference. See [appearance and the planned theme library](docs/themes.md) and [motion behavior](docs/motion.md).
+
+## Beta build
+
+The first Apple Silicon beta candidate is **0.1.0-beta.1**. See [beta notes and the remaining physical-audio acceptance checks](docs/beta-release.md). The private GitHub release remains a draft until those checks pass; automated command timings alone do not establish audible volume response or physical AirPods/headphone recovery.
 
 ## Development
 
@@ -41,7 +45,7 @@ npm ci
 npm run tauri dev
 ```
 
-The macOS arm64 runtime is prepared automatically. It downloads checksum-verified libmpv/Deno artifacts and yt-dlp source, then makes a cached directory-based frozen extractor using the upstream build recipe and hash-pinned requirements. This avoids unpacking a Python runtime on each song. No system packages are installed. See [dependency provenance and remaining release obligations](docs/native-dependencies.md).
+The macOS arm64 runtime is prepared automatically. It builds the CoreAudio-patched libmpv engine from pinned source/static inputs, downloads checksum-verified Deno, and makes a cached directory-based yt-dlp extractor using the upstream build recipe and hash-pinned requirements. This avoids unpacking a Python runtime on each song. The engine build also requires Xcode, pkg-config, Ninja, and CMake. No system packages are installed. See [dependency provenance and remaining release obligations](docs/native-dependencies.md).
 
 Build and open the local app:
 

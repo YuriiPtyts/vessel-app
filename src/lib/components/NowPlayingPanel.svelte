@@ -1,5 +1,6 @@
 <script lang="ts">
   import { AudioLines, Heart, X } from '@lucide/svelte';
+  import { genie } from '../motion';
   import Artwork from './Artwork.svelte';
   import { formatLabel, type PlaybackSnapshot, type Track } from '../native';
   let {
@@ -19,7 +20,7 @@
   } = $props();
 </script>
 
-<aside class="now-playing-panel" aria-label="Now playing artwork">
+<aside class="now-playing-panel" aria-label="Now playing artwork" in:genie>
   <div class="now-playing-panel-heading">
     <span class="eyebrow">NOW PLAYING</span><button
       class="icon-button"

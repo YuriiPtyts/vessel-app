@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Check, RotateCcw, X } from '@lucide/svelte';
+  import { genie } from '../motion';
   import {
     ACCENTS,
     DEFAULT_THEME,
@@ -20,7 +21,11 @@
   } = $props();
 </script>
 
-<section class="appearance-popover" aria-label="Appearance settings">
+<section
+  class="appearance-popover"
+  aria-label="Appearance settings"
+  in:genie={{ origin: 'bottom-left' }}
+>
   <div class="popover-heading">
     <div>
       <p class="eyebrow">MAKE IT YOURS</p>

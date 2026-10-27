@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Check, LoaderCircle, Music2, Play, Radio, Trash2, X } from '@lucide/svelte';
   import { trackTime, type QueueSnapshot } from '../native';
+  import { genie } from '../motion';
   import Artwork from './Artwork.svelte';
 
   let {
@@ -22,7 +23,7 @@
   } = $props();
 </script>
 
-<section class="music-popover queue-popover" aria-label="Play queue">
+<section class="music-popover queue-popover" aria-label="Play queue" in:genie>
   <div class="popover-heading">
     <div>
       <p class="eyebrow">LET THE MUSIC FIND YOU</p>

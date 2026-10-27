@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { genie } from '../motion';
   import {
     ArrowUpRight,
     Check,
@@ -29,7 +30,11 @@
   const connecting = $derived(account.mode === 'signingIn' || account.mode === 'checking');
 </script>
 
-<section class="music-popover account-popover" aria-label="Google account">
+<section
+  class="music-popover account-popover"
+  aria-label="Google account"
+  in:genie={{ origin: 'top-right' }}
+>
   <div class="popover-heading">
     <div>
       <p class="eyebrow">YOUR MUSIC, YOUR CHOICE</p>

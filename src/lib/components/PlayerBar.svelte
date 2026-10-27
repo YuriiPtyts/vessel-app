@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { genie } from '../motion';
   import {
     Check,
     ChevronUp,
@@ -253,7 +254,7 @@
         ><ChevronUp size={12} /></button
       >
       {#if qualityOpen}
-        <div class="quality-popover" role="region" aria-label="Audio quality options">
+        <div class="quality-popover" role="region" aria-label="Audio quality options" in:genie>
           <div class="popover-heading">
             <div>
               <span class="eyebrow">YOUR SOUND</span>
