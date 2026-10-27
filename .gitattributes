@@ -1,0 +1,2 @@
+# Unified-diff context prefixes and upstream whitespace are patch data.
+native/patches/*.patch -whitespace

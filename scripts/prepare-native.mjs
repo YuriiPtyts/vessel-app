@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { buildExtractor } from './build-extractor.mjs';
+import { buildMpv } from './build-mpv.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(await readFile(join(root, 'native-dependencies.json'), 'utf8'));
@@ -52,7 +53,11 @@ for (const dependency of manifest.dependencies) {
   }
 
   const destination = join(runtime, dependency.file);
-  if (dependency.build === 'yt-dlp-onedir') {
+  if (dependency.build === 'mpv-coreaudio') {
+    await buildMpv(dependency, archive, destination, cache);
+    console.log(`Verified ${dependency.name} ${dependency.version} source build`);
+    continue;
+  } else if (dependency.build === 'yt-dlp-onedir') {
     await buildExtractor(dependency, archive, destination, cache);
     const legacy = join(runtime, 'yt-dlp');
     try {

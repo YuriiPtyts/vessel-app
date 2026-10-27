@@ -3,12 +3,12 @@
   "dependencies": [
     {
       "name": "libmpv",
-      "version": "0.41.0-1",
-      "url": "https://github.com/studiolxd/zapper-libmpv/releases/download/v0.41.0-1/Libmpv.xcframework.zip",
-      "sha256": "875e1cc9e7352bf69b252e0e7be18afc8ffeda45bd585d78a837bb9a5d589950",
+      "version": "0.41.0-vessel.1",
+      "url": "https://codeload.github.com/mpvkit/MPVKit/tar.gz/613c0ccc3acf70e136aaff880a9b5fe8fdfaf5b8",
+      "sha256": "0d35e988129b2846532141c16cda4273bd57a1a49ac960f9cb3e1e6f4574bdaa",
       "file": "libmpv.dylib",
-      "zipEntry": "Libmpv.xcframework/macos-arm64_x86_64/Libmpv.framework/Versions/A/Libmpv",
-      "source": "https://github.com/studiolxd/zapper-libmpv/tree/v0.41.0-1",
+      "build": "mpv-coreaudio",
+      "source": "https://github.com/mpv-player/mpv/tree/v0.41.0",
       "license": "LGPL-3.0-or-later dynamic build; complete transitive notices and corresponding-source distribution are release gates"
     },
     {

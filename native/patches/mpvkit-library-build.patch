@@ -1,0 +1,173 @@
+diff --git a/Sources/BuildScripts/XCFrameworkBuild/base.swift b/Sources/BuildScripts/XCFrameworkBuild/base.swift
+--- a/Sources/BuildScripts/XCFrameworkBuild/base.swift
++++ b/Sources/BuildScripts/XCFrameworkBuild/base.swift
+@@ -2,19 +2,7 @@ import Foundation
+ 
+ enum Build {
+     static func performCommand(_ options: ArgumentOptions) throws {
+-        if Utility.shell("which brew") == nil {
+-            print("""
+-            You need to run the script first
+-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+-            """)
+-            return
+-        }
+-        if Utility.shell("which pkg-config") == nil {
+-            Utility.shell("brew install pkg-config")
+-        }
+-        if Utility.shell("which wget") == nil {
+-            Utility.shell("brew install wget")
+-        }
++        // The enclosing Vessel recipe checks tools and supplies Meson privately.
+         let path = URL.currentDirectory + "dist"
+         if !FileManager.default.fileExists(atPath: path.path) {
+             try? FileManager.default.createDirectory(at: path, withIntermediateDirectories: false, attributes: nil)
+@@ -91,7 +79,7 @@ class ArgumentOptions {
+ }
+ 
+ class BaseBuild {
+-    static let defaultPath = "/Library/Frameworks/Python.framework/Versions/Current/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
++    static let defaultPath = ProcessInfo.processInfo.environment["PATH"]!
+     static var platforms = PlatformType.allCases
+     static var options = ArgumentOptions()
+     static let splitPlatformGroups = [
+@@ -145,6 +133,7 @@ class BaseBuild {
+                 try build(platform: platform, arch: arch)
+             }
+         }
++        if library == .FFmpeg || library == .libmpv { return }
+         try createXCFramework()
+         try packageRelease()
+         try afterBuild()
+@@ -155,7 +144,7 @@ class BaseBuild {
+     }
+ 
+     func architectures(_ platform: PlatformType) -> [ArchType] {
+-        platform.architectures
++        [.arm64]
+     }
+ 
+     func platforms() -> [PlatformType] {
+@@ -730,7 +719,7 @@ class BaseBuild {
+                 if FileManager.default.fileExists(atPath: tmpChecksum.path) {
+                     try? FileManager.default.removeItem(at: tmpChecksum)
+                 }
+-                try! Utility.launch(path: "wget", arguments: ["-q", "-O", tmpChecksum.path, target.checksum], currentDirectoryURL: FileManager.default.temporaryDirectory)
++                try! Utility.launch(path: "/usr/bin/curl", arguments: ["-fsSL", "--retry", "3", "-o", tmpChecksum.path, target.checksum], currentDirectoryURL: FileManager.default.temporaryDirectory)
+                 let checksum = try String(contentsOf: tmpChecksum, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+                 dependencyTargetContent += """
+                 
+@@ -908,7 +897,7 @@ class ZipBaseBuild : BaseBuild {
+         try! FileManager.default.createDirectory(atPath: directoryURL.path, withIntermediateDirectories: true, attributes: nil)
+ 
+         if !FileManager.default.fileExists(atPath: outputFile.path) {
+-            try! Utility.launch(path: "wget", arguments: ["-O", outputFileName, library.url], currentDirectoryURL: directoryURL)
++            try! Utility.launch(path: "/usr/bin/curl", arguments: ["-fsSL", "--retry", "3", "-o", outputFileName, library.url], currentDirectoryURL: directoryURL)
+             try! Utility.launch(path: "/usr/bin/unzip", arguments: ["-o",outputFileName], currentDirectoryURL: directoryURL)
+         }
+     }
+@@ -953,7 +942,7 @@ class ZipBaseBuild : BaseBuild {
+     }
+ 
+     override func afterBuild() throws {
+-        try super.afterBuild()
++        // No Swift package metadata is needed for static dependency inputs.
+     }
+ }
+ 
+@@ -1280,6 +1269,9 @@ enum Utility {
+         if !environment.keys.contains("PATH") {
+             environment["PATH"] = BaseBuild.defaultPath
+         }
++        if let ceiling = ProcessInfo.processInfo.environment["GIT_CEILING_DIRECTORIES"] {
++            environment["GIT_CEILING_DIRECTORIES"] = ceiling
++        }
+         task.environment = environment
+ 
+         var outputFileHandle: FileHandle?
+diff --git a/Sources/BuildScripts/XCFrameworkBuild/main.swift b/Sources/BuildScripts/XCFrameworkBuild/main.swift
+--- a/Sources/BuildScripts/XCFrameworkBuild/main.swift
++++ b/Sources/BuildScripts/XCFrameworkBuild/main.swift
+@@ -5,7 +5,7 @@ do {
+     try Build.performCommand(options)
+ 
+     // SSL
+-    try BuildOpenSSL().buildALL()
++    // FFmpeg uses GnuTLS; no unused OpenSSL archive is needed.
+     try BuildGmp().buildALL()
+     try BuildNettle().buildALL()
+     try BuildGnutls().buildALL()
+@@ -18,10 +18,10 @@ do {
+     try BuildASS().buildALL()
+ 
+     // libsmbclient
+-    try BuildSmbclient().buildALL()
++    // No GPL SMB dependency.
+ 
+     // libbluray
+-    try BuildBluray().buildALL()
++    // No unused Blu-ray dependency.
+     
+     // ffmpeg
+     try BuildUavs3d().buildALL()
+@@ -31,7 +31,9 @@ do {
+     try BuildLittleCms().buildALL()
+     try BuildPlacebo().buildALL()
+     try BuildDav1d().buildALL()
+-    try BuildFFMPEG().buildALL()
++    if !FileManager.default.fileExists(atPath: (URL.currentDirectory + "FFmpeg/macos/thin/arm64/lib/libavutil.a").path) {
++        try BuildFFMPEG().buildALL()
++    }
+ 
+     // mpv
+     try BuildUchardet().buildALL()
+@@ -384,6 +386,8 @@ private class BuildMPV: BaseBuild {
+     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
+         var array = [
+             "-Dlibmpv=true",
++            "-Dcplayer=false",
++            "-Dbuild-date=false",
+             "-Dgl=enabled",
+             "-Dplain-gl=enabled",
+             "-Diconv=enabled",
+@@ -450,12 +454,7 @@ private class BuildFFMPEG: BaseBuild {
+     override func beforeBuild() throws {
+         try super.beforeBuild()
+ 
+-        if Utility.shell("which nasm") == nil {
+-            Utility.shell("brew install nasm")
+-        }
+-        if Utility.shell("which sdl2-config") == nil {
+-            Utility.shell("brew install sdl2")
+-        }
++        // arm64 uses clang's assembler; this library build has no SDL player.
+ 
+         let lldbFile = URL.currentDirectory + "LLDBInitFile"
+         try? FileManager.default.removeItem(at: lldbFile)
+@@ -594,16 +593,7 @@ private class BuildFFMPEG: BaseBuild {
+             arguments.append("--enable-neon")
+             arguments.append("--enable-asm")
+         }
+-        if platform == .macos, arch.executable {
+-            arguments.append("--enable-ffplay")
+-            arguments.append("--enable-sdl2")
+-            arguments.append("--enable-decoder=rawvideo")
+-            arguments.append("--enable-filter=color")
+-            arguments.append("--enable-filter=lut")
+-            arguments.append("--enable-filter=testsrc")
+-        } else {
+-            arguments.append("--disable-programs")
+-        }
++        arguments.append("--disable-programs")
+         //        if platform == .isimulator || platform == .tvsimulator {
+         //            arguments.append("--assert-level=1")
+         //        }
+@@ -647,7 +637,7 @@ private class BuildFFMPEG: BaseBuild {
+         "--disable-armv5te", "--disable-armv6", "--disable-armv6t2",
+         "--disable-bzlib", "--disable-gray", "--disable-iconv", "--disable-linux-perf",
+         "--disable-shared", "--disable-small", "--disable-symver", "--disable-xlib",
+-        "--enable-cross-compile", "--enable-libxml2", "--enable-nonfree",
++        "--enable-cross-compile", "--enable-libxml2",
+         "--enable-optimizations", "--enable-pic", "--enable-runtime-cpudetect", "--enable-static", "--enable-thumb", "--enable-version3",
+         "--pkg-config-flags=--static",
+         // Documentation options:

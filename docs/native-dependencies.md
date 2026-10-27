@@ -2,13 +2,18 @@
 
 Pinned, checksum-verified artifacts/source are bundled in the app. Preparation runs on the developer/build machine only. End users do not install tools. Native binaries, source archives, build virtual environments, and caches are ignored by Git.
 
-## libmpv 0.41.0 (zapper build v0.41.0-1)
+## libmpv 0.41.0-vessel.1 (CoreAudio cleanup backport)
 
-- Artifact and corresponding source: https://github.com/studiolxd/zapper-libmpv/releases/tag/v0.41.0-1
-- Build recipes and dependency pins: https://github.com/studiolxd/zapper-libmpv/tree/v0.41.0-1
-- Recipe inspected: macOS builds use mpv `-Dgpl=false` and FFmpeg without `--enable-gpl` or `--enable-nonfree`; dependencies are linked into a replaceable dynamic library. The combined library uses LGPL-3.0-or-later.
+- Preparation now builds the arm64 engine from the exact MPVKit/mpv/FFmpeg source snapshots and static dependency archives pinned in `native/mpv-build.json`. Every downloaded input, including the private build environment's Meson wheel, is SHA-256 checked before use.
+- `native/patches/mpv-coreaudio-cleanup.patch` backports upstream mpv commit `c5d391adba7bd024954d0df1e0405f5749f4d4ca` (PR #18383). Device listeners are registered only after successful AudioUnit initialization; partial initialization is cleaned up. The v0.41.0 helper's disposed AudioUnit pointer is cleared to avoid double disposal during the backported cleanup.
+- `scripts/build-mpv.mjs` and `native/patches/mpvkit-library-build.patch` keep GPL/nonfree flags off, omit unused SMB/Blu-ray/OpenSSL inputs and CLI players, and link the static dependencies into a replaceable LGPL-3.0-or-later dynamic library. Only system dynamic dependencies are accepted. Runtime replacement is atomic; build provenance is bundled in `runtime/libmpv-build.json`.
+- Developer/build requirements: Xcode, Python 3, pkg-config, Ninja, and CMake. Meson is installed from its pinned wheel into the ignored build cache. The recipe does not install global packages. These tools are **not** needed by end users.
+- Source and compiled caches live in `.cache/native/`; the compiled-file checksum and recipe hash are checked on reuse. The normal macOS bundle contains the resulting engine, without a source build at launch.
+- The previous baseline was https://github.com/studiolxd/zapper-libmpv/releases/tag/v0.41.0-1. Its LGPL build strategy is retained, with the missing CoreAudio fix now tracked in this repository.
 - Upstream licensing: https://github.com/mpv-player/mpv/blob/v0.41.0/Copyright
 - Rejected candidate: kirbylink/mpv-natives v0.41.0 declares self-contained binaries, but `otool -L` and a real `dlopen` showed Homebrew libxcb/jpeg dependencies in its arm64 slice. Do not reuse it without resolving the closure.
+
+The host remains macOS 27.0.1 arm64. Minimum-OS/clean-machine testing remains a release gate; the build linker reported macOS-14 deployment metadata on some prebuilt AVS3 assembly objects, despite the general engine target. No minimum-OS certification is inferred from the host checks.
 
 ## yt-dlp 2026.10.21
 

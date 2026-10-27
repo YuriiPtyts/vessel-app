@@ -1,0 +1,124 @@
+{
+  "mpvkit": {
+    "url": "https://codeload.github.com/mpvkit/MPVKit/tar.gz/613c0ccc3acf70e136aaff880a9b5fe8fdfaf5b8",
+    "sha256": "0d35e988129b2846532141c16cda4273bd57a1a49ac960f9cb3e1e6f4574bdaa"
+  },
+  "mpv": {
+    "url": "https://codeload.github.com/mpv-player/mpv/tar.gz/41f6a645068483470267271e1d09966ca3b9f413",
+    "sha256": "068960e89211f2adc80af03f637fa393fb5e407d3dd23592c8fe8c5490bb7ae4"
+  },
+  "ffmpeg": {
+    "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/894da5ca7d742e4429ffb2af534fcda0103ef593",
+    "sha256": "9dad3557314f1b7923b61aff15e30079e964c3b41276bbd43dd8bb15b8028b5f"
+  },
+  "meson": {
+    "version": "1.9.1",
+    "filename": "meson-1.9.1-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/9c/07/b48592d325cb86682829f05216e4efb2dc881762b8f1bafb48b57442307a/meson-1.9.1-py3-none-any.whl",
+    "sha256": "f824ab770c041a202f532f69e114c971918ed2daff7ea56583d80642564598d0"
+  },
+  "archives": [
+    {
+      "library": "gmp",
+      "version": "3.8.11",
+      "url": "https://github.com/mpvkit/gnutls-build/releases/download/3.8.11/gmp-all.zip",
+      "sha256": "cef5c3ff12260528a5971d2bd7bb3bc31ae85fac1235c06eff3de96c28c38aa2"
+    },
+    {
+      "library": "nettle",
+      "version": "3.8.11",
+      "url": "https://github.com/mpvkit/gnutls-build/releases/download/3.8.11/nettle-all.zip",
+      "sha256": "7c1606e5acdc0be563f5a6bb19cd2fe3e1e93b30154ac22fc2f80bffcf3151c2"
+    },
+    {
+      "library": "gnutls",
+      "version": "3.8.11",
+      "url": "https://github.com/mpvkit/gnutls-build/releases/download/3.8.11/gnutls-all.zip",
+      "sha256": "6e125d9d7be4e09e112950703b0563324f5a05e546782e542b353db360f59b59"
+    },
+    {
+      "library": "libunibreak",
+      "version": "0.17.4",
+      "url": "https://github.com/mpvkit/libass-build/releases/download/0.17.4/libunibreak-all.zip",
+      "sha256": "06f7e68102bb9f9f963b2517455dc543f438f7beccd002edcd63dcd1cbccd9a5"
+    },
+    {
+      "library": "libfreetype",
+      "version": "0.17.4",
+      "url": "https://github.com/mpvkit/libass-build/releases/download/0.17.4/libfreetype-all.zip",
+      "sha256": "f0eec59e51f4137ba57afa849393ba4815c25418870b9511990bd4ebeacdbfaf"
+    },
+    {
+      "library": "libfribidi",
+      "version": "0.17.4",
+      "url": "https://github.com/mpvkit/libass-build/releases/download/0.17.4/libfribidi-all.zip",
+      "sha256": "e20ccc160ea2995f2ef2c5ee0ec50f307cbc10c371fb299b5df62546de07d59d"
+    },
+    {
+      "library": "libharfbuzz",
+      "version": "0.17.4",
+      "url": "https://github.com/mpvkit/libass-build/releases/download/0.17.4/libharfbuzz-all.zip",
+      "sha256": "c1f56b4f47b64b15e0be16a93703a6db484079878de16b6d598d22055d86f24c"
+    },
+    {
+      "library": "libass",
+      "version": "0.17.4",
+      "url": "https://github.com/mpvkit/libass-build/releases/download/0.17.4/libass-all.zip",
+      "sha256": "fdd0b89998f253ad07fb73a5044766911404f4f92f4037812ae960589595638e"
+    },
+    {
+      "library": "libuavs3d",
+      "version": "1.2.1-xcode",
+      "url": "https://github.com/mpvkit/libuavs3d-build/releases/download/1.2.1-xcode/libuavs3d-all.zip",
+      "sha256": "f6fe88444d56d7332cd215fb2a04c14c16e8e565aa00d0c2798eb04c47e5bbe7"
+    },
+    {
+      "library": "libdovi",
+      "version": "3.3.2",
+      "url": "https://github.com/mpvkit/libdovi-build/releases/download/3.3.2/libdovi-all.zip",
+      "sha256": "81b85386016a012391c473674ef96e4e494fa76aef2f7b6c102a335e844644f8"
+    },
+    {
+      "library": "vulkan",
+      "version": "1.4.1",
+      "url": "https://github.com/mpvkit/moltenvk-build/releases/download/1.4.1/MoltenVK-all.zip",
+      "sha256": "9f65e1025f49c55394da475e40fbe1da8dbd10382d730ce81ebc4c5ac40104d1"
+    },
+    {
+      "library": "libshaderc",
+      "version": "2025.5.0",
+      "url": "https://github.com/mpvkit/libshaderc-build/releases/download/2025.5.0/libshaderc-all.zip",
+      "sha256": "1079da73a292e5b2cea6a02fa2208c4935ead79a98043f81708424510e0ab53f"
+    },
+    {
+      "library": "lcms2",
+      "version": "2.17.0",
+      "url": "https://github.com/mpvkit/lcms2-build/releases/download/2.17.0/lcms2-all.zip",
+      "sha256": "8c118b2c04e2440ecf25ffebfa7952ebb09aba83a71378e3b9ed45dae3a6115a"
+    },
+    {
+      "library": "libplacebo",
+      "version": "7.351.0-2512",
+      "url": "https://github.com/mpvkit/libplacebo-build/releases/download/7.351.0-2512/libplacebo-all.zip",
+      "sha256": "aa8574c1160deb17863a82258d9a4289e5a5413ca3a58f5e3b12bd25e5585919"
+    },
+    {
+      "library": "libdav1d",
+      "version": "1.5.2-xcode",
+      "url": "https://github.com/mpvkit/libdav1d-build/releases/download/1.5.2-xcode/libdav1d-all.zip",
+      "sha256": "52ad3643dc9f9756b7b40c8375c54c8d8a4b200c4c73e94735e35005cc74aecc"
+    },
+    {
+      "library": "libuchardet",
+      "version": "0.0.8-xcode",
+      "url": "https://github.com/mpvkit/libuchardet-build/releases/download/0.0.8-xcode/libuchardet-all.zip",
+      "sha256": "2e530b2d5448a1ca9d1f0a6b3ddf80729a870a6ec6c0f8555bc89c58143f01d1"
+    },
+    {
+      "library": "libluajit",
+      "version": "2.1.0-xcode",
+      "url": "https://github.com/mpvkit/libluajit-build/releases/download/2.1.0-xcode/libluajit-all.zip",
+      "sha256": "e4dc3a930e699dbfa76cce4b6e583589d8093bd7e6e4b7fc5778c890d7d93430"
+    }
+  ]
+}

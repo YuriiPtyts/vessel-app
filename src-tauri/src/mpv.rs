@@ -317,6 +317,43 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[ignore = "requires the local CoreAudio initialization-failure audit library"]
+    fn native_failed_audio_init_releases_device_callbacks() {
+        use std::time::{Duration, Instant};
+        // SAFETY: the explicit diagnostic library exports this no-argument counter.
+        let audit = unsafe {
+            libloading::os::unix::Library::this()
+                .get::<unsafe extern "C" fn() -> i32>(b"vessel_audio_listener_count\0")
+                .unwrap()
+        };
+        let engine = Mpv::open(&crate::test_audio::paths()).unwrap();
+        // SAFETY: the audit function is provided by the explicit test image.
+        let baseline = unsafe { audit() };
+        let wav = crate::test_audio::silence_at(44100, 2);
+        engine.set("volume", "0").unwrap();
+        engine.set("ao", "coreaudio,avfoundation").unwrap();
+        engine
+            .run(&["loadfile", wav.path().to_str().unwrap(), "replace"])
+            .unwrap();
+        let start = Instant::now();
+        while engine.text("current-ao").is_none() {
+            assert!(start.elapsed() < Duration::from_secs(5));
+            assert!(!engine.events().failed);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(engine.text("current-ao").as_deref(), Some("avfoundation"));
+        // SAFETY: the counter is valid while the diagnostic image remains loaded.
+        let outstanding = unsafe { audit() };
+        println!("CoreAudio callbacks after failed init and AVFoundation fallback: {outstanding}");
+        assert_eq!(
+            outstanding, baseline,
+            "a failed audio driver left CoreAudio callbacks referencing its released context"
+        );
+        engine.run(&["stop"]).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     #[ignore = "real muted native decoding and temporary aggregate-device publish/remove; no network"]
     fn native_audio_survives_device_publication_and_removal() {
         use std::time::{Duration, Instant};
