@@ -20,7 +20,10 @@ assert(
 );
 assert.equal(report.web.rootPresent, true, 'The production frontend must have mounted.');
 assert.equal(report.web.playerPresent, true);
-assert(Number(report.web.tint) <= 0.25, 'The web tint must not cover the native backdrop.');
+assert(
+  Number(report.web.tint) >= 0.5 && Number(report.web.tint) < 1,
+  'The glass mode must use the readable 50–99% tint range.',
+);
 assert.equal(report.web.stageBackground, 'rgba(0, 0, 0, 0)');
 console.log(
   `Native material contract passed: clear NSWindow, non-opaque WebView, clear Liquid Glass, ${Number(report.web.tint) * 100}% tint; ${report.web.homeShelves} live Home shelves.`,

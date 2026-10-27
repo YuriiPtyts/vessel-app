@@ -1,6 +1,6 @@
 /* Shared materials consume semantic theme tokens. No full-window CSS blur layer. */
 .app-frame {
-  --glass-opacity: 0.18;
+  --glass-opacity: 0.5;
   color: var(--theme-text);
   background: rgb(var(--theme-bg-rgb) / var(--glass-opacity));
 }

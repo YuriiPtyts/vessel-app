@@ -27,6 +27,7 @@
     loadAppearance,
     normalizeAppearance,
     saveAppearance,
+    usesOpaqueMaterial,
     type AppearancePreferences,
   } from './lib/appearance';
   import { createVolumeControl } from './lib/volume';
@@ -66,6 +67,7 @@
     setMaterialMode,
     setPaused,
     setVolume,
+    toggleMute,
     stopPlayback,
     toggleLike,
     type LocalLibrary,
@@ -121,17 +123,47 @@
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let lastHistoryId: string | undefined;
   const stateRevision = { playback: 0, queue: 0, selection: 0, account: 0 };
-  const volume = createVolumeControl(
+  let volumeInteraction = 0;
+  const volumeWriter = createVolumeControl(
     async (value) => {
       if (!report) return;
       const snapshot = await setVolume(value);
       // A volume reply must not roll track/transport state back to an older snapshot.
-      playback = { ...playback, volume: snapshot.volume };
+      acceptVolume(snapshot);
     },
     (failure) => {
       error = errorMessage(failure);
     },
   );
+  function volume(value: number) {
+    volumeInteraction++;
+    return volumeWriter(value);
+  }
+
+  function acceptVolume(snapshot: PlaybackSnapshot) {
+    if (snapshot.volumeRevision >= playback.volumeRevision) {
+      playback = { ...playback, volume: snapshot.volume, volumeRevision: snapshot.volumeRevision };
+    }
+  }
+
+  function acceptPlayback(snapshot: PlaybackSnapshot) {
+    playback =
+      snapshot.volumeRevision < playback.volumeRevision
+        ? { ...snapshot, volume: playback.volume, volumeRevision: playback.volumeRevision }
+        : snapshot;
+  }
+
+  async function mute() {
+    if (!report) return;
+    const interaction = ++volumeInteraction;
+    await volumeWriter.flush();
+    if (interaction !== volumeInteraction) return;
+    try {
+      acceptVolume(await toggleMute());
+    } catch (failure) {
+      error = errorMessage(failure);
+    }
+  }
 
   const likedIds = $derived(new Set(library.liked.map((track) => track.id)));
   const playing = $derived(playback.status === 'playing' || playback.status === 'buffering');
@@ -185,7 +217,7 @@
               onPlayback((snapshot) => {
                 if (disposed) return;
                 stateRevision.playback++;
-                playback = snapshot;
+                acceptPlayback(snapshot);
                 if (snapshot.status === 'playing' && snapshot.track?.id !== lastHistoryId) {
                   lastHistoryId = snapshot.track?.id;
                   void refreshLibrary();
@@ -221,7 +253,7 @@
           await Promise.all([
             refreshSession(),
             refreshLibrary(),
-            setMaterialMode(appearance.reducedTransparency),
+            setMaterialMode(usesOpaqueMaterial(appearance)),
           ]);
           if (!disposed && view === 'home') void loadHome();
         }
@@ -255,7 +287,7 @@
       getSelection(),
       getAccount(),
     ]);
-    if (revision.playback === stateRevision.playback) playback = transport;
+    if (revision.playback === stateRevision.playback) acceptPlayback(transport);
     updateQueue(upcoming);
     if (revision.selection === stateRevision.selection) inspection = selection;
     if (revision.account === stateRevision.account) updateAccount(profile);
@@ -324,7 +356,7 @@
         selectionRevision === stateRevision.selection
       ) {
         inspection = selection.inspection;
-        playback = selection.playback;
+        acceptPlayback(selection.playback);
       }
     } catch (failure) {
       if (revision === playbackRevision && !isCancelled(failure)) error = errorMessage(failure);
@@ -431,7 +463,7 @@
     busy = true;
     error = null;
     try {
-      playback = await action();
+      acceptPlayback(await action());
     } catch (failure) {
       if (!isCancelled(failure)) error = errorMessage(failure);
     } finally {
@@ -459,7 +491,7 @@
       const selection = await playSong(track.id, context);
       if (revision === playbackRevision) {
         inspection = selection.inspection;
-        playback = selection.playback;
+        acceptPlayback(selection.playback);
       }
     } catch (failure) {
       if (revision === playbackRevision && !isCancelled(failure)) error = errorMessage(failure);
@@ -506,11 +538,15 @@
       }
     }
     try {
-      if (report && next.reducedTransparency !== previous.reducedTransparency) {
-        await setMaterialMode(next.reducedTransparency);
+      if (report && usesOpaqueMaterial(next) !== usesOpaqueMaterial(previous)) {
+        await setMaterialMode(usesOpaqueMaterial(next));
       }
     } catch (failure) {
-      appearance = { ...appearance, reducedTransparency: previous.reducedTransparency };
+      appearance = {
+        ...appearance,
+        glassOpacity: previous.glassOpacity,
+        reducedTransparency: previous.reducedTransparency,
+      };
       try {
         saveAppearance(localStorage, appearance);
       } catch {
@@ -554,6 +590,10 @@
       event.preventDefault();
       void control(() => setPaused(playback.status !== 'paused'));
     }
+    if (event.key.toLowerCase() === 'm') {
+      event.preventDefault();
+      void mute();
+    }
     if (
       (event.code === 'ArrowLeft' || event.code === 'ArrowRight') &&
       ['playing', 'paused', 'buffering'].includes(playback.status)
@@ -582,7 +622,7 @@
 
 <div
   class="app-frame accent-{appearance.accent}"
-  class:opaque={appearance.reducedTransparency}
+  class:opaque={usesOpaqueMaterial(appearance)}
   class:sidebar-compact={appearance.sidebarCollapsed}
   class:density-compact={appearance.density === 'compact'}
   class:with-now-playing={artworkVisible && viewportWidth >= 1180}
@@ -919,6 +959,7 @@
     onpause={() => void control(() => setPaused(playback.status !== 'paused'))}
     onseek={(position) => control(() => seekTrack(position))}
     onvolume={volume}
+    onmute={() => void mute()}
     onstop={() => {
       void cancel();
       void control(stopPlayback);

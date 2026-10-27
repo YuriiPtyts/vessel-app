@@ -140,6 +140,28 @@ The isolated native sign-in window, Rust-only session/vault implementation, acco
 
 Local likes/history are still local, not synchronized account library data. Automatic stream renewal/recovery, gapless, media keys, full resource/energy budgets, broader account/region matrices, minimum-OS testing, and distribution gates remain open.
 
+## Readable tint, volume ordering, and Rust direct-source follow-up (2026-10-27)
+
+### Verified
+
+- **16 WebKit interface-contract tests** pass, with mocked native IPC. Added checks cover 50–100% tint, saved low-value clamping, fully opaque CSS/native-material request at 100%, delayed volume echoes after release, and mute/button/`M` restoration. Existing account, queue, saved music, artwork, and narrow-layout checks remain green.
+- **29 ordinary library unit tests**, the native-binary IPC-origin test, and the non-network application integration test pass. Rust fmt, Clippy with warnings denied (default and `native-diagnostics`), Svelte diagnostics, and the production frontend build pass.
+- The first-selection timing test went red at **3.503 seconds** before the Rust direct guest source path, versus **0.630**, **0.657**, and **0.778 seconds** after it with explicit warm-up. The latest resolution/load acknowledgement was **147 ms**. These are muted decoded-output observations, not an acoustic or cold-install/p95 guarantee.
+- Independent live checks passed: Opus decoding, advancing position, stable pause, seek, paused AAC quality change, resume/stop, search-to-play, Home/collection browsing, and catalog pagination. A separate unwarmed catalog selection took **2.262 seconds** with a **0.870-second** cached repeat.
+- Both retained extractor profiles independently returned five usable guest audio formats: **2.779 seconds** for `visionos`, **7.750 seconds** for default. Direct request/probe work shares a two-second budget before fallback. Account revisions, cancellation, private cache/URLs, and provider availability handling remain in force. Cancellation now starts the request with one poll rather than racing a fixed sleep against the faster resolver.
+- Rust-owned radio generated **50 tracks**, prepared the next source in **203 ms**, and advanced from natural EOF to the next decoded source in **359 ms**, without a renderer.
+- The native 100-change volume test went red before event suppression (100 full playback events). The latest pass measured **129 µs p95**, **172 µs max**, **zero full-state events** during a **6.37 ms** sweep of local silent audio. This measures command acknowledgements, not acoustic gain latency. Playback refresh/EOF polling remains active; stop and radio advancement passed separately.
+- Native AppKit/WKWebView diagnostics passed with a clear NSWindow, non-opaque WebView, native clear glass, **50% tint**, mounted production player, and **three live provider shelves**. The 100% material toggle is covered by the mocked IPC contract; this native diagnostic run exercised 50% glass.
+- A real muted native test passed **20 aggregate-device selection/removal cycles**, verified restoration of the original default output, and checked continued position advancement within three seconds (observed **326 ms** after the final settling check). Its actual backend was **AVFoundation/S16**, not the CoreAudio output driver. An initial 200 ms assertion was too short; `node scripts/probe-audio-device.mjs` bounds the native test/teardown process group.
+- Normal `npm run tauri -- build --bundles app` passed; the installed development app is **198.65 MiB**. The normal bundle ran for eight seconds with `PATH=/usr/bin:/bin` and quit via its own NSRunningApplication (`exit 0`, 301 captured output bytes). This establishes launch/quit, not native UI automation.
+- Final `.app` runtime checks with a system-only PATH passed: warmed first-selection decoded output **664 ms** (load acknowledgement **119 ms**); separate guest Opus flow **2.263 seconds** including inspection and the test's position threshold; paused AAC switching, resume/stop, and cancellation; radio next-source preparation **205 ms**, natural EOF-to-next-decoded-source **356 ms**. Packaged-runtime volume sweep: **61 µs p95**, **167 µs max**, **zero full-state events** in **4.44 ms**. These muted tests do not measure audible output or physical-device correctness.
+
+### Unresolved headphone crash
+
+The original report contains a null-address SIGSEGV in libmpv during CoreAudio device-change notification. Synthetic device/samplerate stress has **not reproduced the physical headphone crash**. A float-format workaround did not keep playback on CoreAudio and was removed. This follow-up does not claim a headphone-crash fix. The connection type/model and a repeatable hardware reproducer are still needed; see [audio-device-investigation.md](audio-device-investigation.md) for evidence, rejected experiments, upstream references, and a next-session procedure.
+
+Google password/2FA, real-account Keychain operations, authenticated/Premium playback, broader hardware/region coverage, and long-session CPU/energy behavior retain the earlier verification limits.
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.

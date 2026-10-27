@@ -192,6 +192,11 @@ async fn set_volume(state: AppState<'_>, volume: f64) -> Result<PlaybackSnapshot
 }
 
 #[tauri::command]
+async fn toggle_mute(state: AppState<'_>) -> Result<PlaybackSnapshot> {
+    state.toggle_mute().await
+}
+
+#[tauri::command]
 async fn stop_playback(state: AppState<'_>) -> Result<PlaybackSnapshot> {
     state.stop().await
 }
@@ -339,6 +344,7 @@ fn main() {
                 set_paused,
                 seek_track,
                 set_volume,
+                toggle_mute,
                 stop_playback,
                 queue_snapshot,
                 selection_snapshot,

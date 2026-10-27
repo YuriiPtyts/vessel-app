@@ -12,6 +12,8 @@
     SlidersHorizontal,
     Square,
     Volume2,
+    Volume1,
+    VolumeX,
     X,
   } from '@lucide/svelte';
   import {
@@ -35,6 +37,7 @@
     onpause,
     onseek,
     onvolume,
+    onmute,
     onstop,
     oncancel,
     onprevious,
@@ -57,6 +60,7 @@
     onpause: () => void;
     onseek: (position: number) => Promise<void>;
     onvolume: (value: number) => Promise<void>;
+    onmute: () => void;
     onstop: () => void;
     oncancel: () => void;
     onprevious: () => void;
@@ -198,7 +202,19 @@
   </div>
   <div class="player-accessories">
     <div class="player-volume">
-      <Volume2 size={15} aria-hidden="true" /><input
+      <button
+        class="icon-button volume-mute"
+        aria-label={(volumeDraft ?? playback.volume) === 0 ? 'Unmute audio' : 'Mute audio'}
+        aria-pressed={(volumeDraft ?? playback.volume) === 0}
+        title={(volumeDraft ?? playback.volume) === 0 ? 'Unmute (M)' : 'Mute (M)'}
+        onclick={onmute}
+      >
+        {#if (volumeDraft ?? playback.volume) === 0}<VolumeX
+            size={16}
+          />{:else if (volumeDraft ?? playback.volume) < 50}<Volume1 size={16} />{:else}<Volume2
+            size={16}
+          />{/if}
+      </button><input
         type="range"
         aria-label="Volume"
         min="0"
@@ -207,6 +223,7 @@
         value={volumeDraft ?? playback.volume}
         style:--range-progress={`${volumeDraft ?? playback.volume}%`}
         aria-valuetext={`${Math.round(volumeDraft ?? playback.volume)} percent`}
+        title={`${Math.round(volumeDraft ?? playback.volume)}%`}
         onpointerdown={() => {
           volumePointerDown = true;
         }}

@@ -736,7 +736,7 @@ impl Application {
         if *cancel.borrow_and_update() {
             return;
         }
-        tokio::select! {_=async{let _=tokio::join!(provider::warm_up(&self.paths),self.player.warm_up(),self.restore_account());}=>{},_=cancel.changed()=>{}}
+        tokio::select! {_=async{let _=tokio::join!(self.resolver.warm_up(),self.player.warm_up(),self.restore_account());}=>{},_=cancel.changed()=>{}}
     }
     pub async fn play(&self, id: &str, format_id: &str) -> Result<PlaybackSnapshot> {
         let (track, format, source) = self
@@ -770,6 +770,9 @@ impl Application {
     }
     pub async fn volume(&self, volume: f64) -> Result<PlaybackSnapshot> {
         self.player.volume(volume).await
+    }
+    pub async fn toggle_mute(&self) -> Result<PlaybackSnapshot> {
+        self.player.toggle_mute().await
     }
     pub async fn stop(&self) -> Result<PlaybackSnapshot> {
         self.cancel_inspection();

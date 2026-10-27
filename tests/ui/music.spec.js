@@ -61,6 +61,52 @@ test('live volume stays responsive and coalesces writes when native replies are 
   ).toBeLessThan(20);
 });
 
+test('late native volume echoes cannot move the slider back after releasing it', async ({
+  page,
+}) => {
+  await nativeFixture(page, { volumeDelay: 90 });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto('/');
+  const slider = page.getByRole('slider', { name: 'Volume', exact: true });
+  const box = await slider.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.82, box.y + box.height / 2, { steps: 8 });
+  const final = await slider.inputValue();
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.__vesselVolumeInFlight)).toBe(0);
+  await page.evaluate(() => window.__vesselEmitSnapshot({ volume: 3, volumeRevision: 0 }));
+  await expect(slider).toHaveValue(final);
+});
+
+test('mute and M restore the last audible volume without changing the track', async ({ page }) => {
+  await nativeFixture(page);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
+  const slider = page.getByRole('slider', { name: 'Volume', exact: true });
+  await slider.evaluate((element) => {
+    element.value = '73';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(slider).toHaveValue('73');
+  await page.getByRole('button', { name: 'Mute audio', exact: true }).click();
+  await expect(slider).toHaveValue('0');
+  await page.getByRole('button', { name: 'Unmute audio', exact: true }).click();
+  await expect(slider).toHaveValue('73');
+  await page.getByRole('heading', { name: 'Listen now.', exact: true }).click();
+  await page.keyboard.press('m');
+  await expect(slider).toHaveValue('0');
+  await page.keyboard.press('m');
+  await expect(slider).toHaveValue('73');
+  await expect(
+    page
+      .getByRole('region', { name: 'Music player' })
+      .getByRole('heading', { name: 'Instant Crush', exact: true }),
+  ).toBeVisible();
+});
+
 test('Duskfox is the default and appearance choices survive a restart', async ({ page }) => {
   await nativeFixture(page);
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -80,7 +126,7 @@ test('Duskfox is the default and appearance choices survive a restart', async ({
   await expect(page.getByText('Duskfox', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Iris accent' }).click();
   await page.getByRole('slider', { name: 'Glass tint' }).evaluate((element) => {
-    element.value = '42';
+    element.value = '72';
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
   });
@@ -93,11 +139,11 @@ test('Duskfox is the default and appearance choices survive a restart', async ({
   await expect(frame).toHaveClass(/sidebar-compact/);
   await expect(frame).toHaveClass(/density-compact/);
   await page.getByRole('button', { name: 'Appearance settings' }).click();
-  await expect(page.getByRole('slider', { name: 'Glass tint' })).toHaveValue('42');
+  await expect(page.getByRole('slider', { name: 'Glass tint' })).toHaveValue('72');
   await expect(page.getByRole('switch', { name: /Now playing artwork/ })).not.toBeChecked();
   await page.getByRole('button', { name: 'Reset appearance' }).click();
   await expect(frame).toHaveClass(/accent-rose/);
-  await expect(page.getByRole('slider', { name: 'Glass tint' })).toHaveValue('18');
+  await expect(page.getByRole('slider', { name: 'Glass tint' })).toHaveValue('50');
   await expect(page.getByRole('switch', { name: /Now playing artwork/ })).toBeChecked();
 });
 
@@ -293,7 +339,7 @@ test('clear glass upgrades the previous default tint and preserves layout choice
     await frame.evaluate((element) =>
       Number(getComputedStyle(element).getPropertyValue('--glass-opacity')),
     ),
-  ).toBe(0.18);
+  ).toBe(0.5);
   expect(
     await page
       .locator('.main-stage')
@@ -302,6 +348,61 @@ test('clear glass upgrades the previous default tint and preserves layout choice
   expect(
     await page.evaluate(() => JSON.parse(localStorage.getItem('vessel:appearance:v2')).version),
   ).toBe(2);
+});
+
+test('glass tint starts at 50%, clamps old low values, and is opaque at 100%', async ({ page }) => {
+  await nativeFixture(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('vessel:appearance:v2'))
+      localStorage.setItem(
+        'vessel:appearance:v2',
+        JSON.stringify({ version: 2, glassOpacity: 8, accent: 'iris', density: 'compact' }),
+      );
+  });
+  await page.goto('/');
+  const frame = page.locator('.app-frame');
+  await page.getByRole('button', { name: 'Appearance settings' }).click();
+  const tint = page.getByRole('slider', { name: 'Glass tint' });
+  const setTint = (value) =>
+    tint.evaluate((element, value) => {
+      element.value = String(value);
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+    }, value);
+  await expect(tint).toHaveAttribute('min', '50');
+  await expect(tint).toHaveAttribute('max', '100');
+  await expect(tint).toHaveValue('50');
+  await expect(frame).toHaveClass(/accent-iris/);
+  await expect(frame).toHaveClass(/density-compact/);
+  await setTint(100);
+  await expect(frame).toHaveClass(/opaque/);
+  expect(await frame.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(35, 33, 54)',
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.__vesselCalls.filter((call) => call.command === 'set_material_mode').at(-1)?.args
+            .reduced,
+      ),
+    )
+    .toBe(true);
+  await page.reload();
+  await expect(frame).toHaveClass(/opaque/);
+  await page.getByRole('button', { name: 'Appearance settings' }).click();
+  await expect(tint).toHaveValue('100');
+  await setTint(50);
+  await expect(frame).not.toHaveClass(/opaque/);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.__vesselCalls.filter((call) => call.command === 'set_material_mode').at(-1)?.args
+            .reduced,
+      ),
+    )
+    .toBe(false);
 });
 
 test('radio queue and transport follow native events without renderer-driven autoplay', async ({

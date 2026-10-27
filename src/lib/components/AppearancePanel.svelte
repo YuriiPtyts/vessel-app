@@ -70,7 +70,7 @@
       oninput={(event) => onchange({ glassOpacity: event.currentTarget.valueAsNumber }, false)}
       onchange={() => onchange({})}
     />
-    <p>Lower tint lets more of your desktop through.</p>
+    <p>50% keeps the glass readable. 100% is fully opaque.</p>
   </div>
   <button
     class="appearance-option"

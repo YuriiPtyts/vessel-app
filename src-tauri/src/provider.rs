@@ -78,6 +78,7 @@ pub(crate) struct Resolver {
     client: reqwest::Client,
     cache: Mutex<VecDeque<CachedStream>>,
     account: Arc<Account>,
+    direct: crate::direct::DirectGuest,
 }
 
 impl Resolver {
@@ -89,6 +90,7 @@ impl Resolver {
             .map_err(|_| AppError::internal())?;
         Ok(Self {
             paths,
+            direct: crate::direct::DirectGuest::new(client.clone()),
             client,
             cache: Mutex::new(VecDeque::new()),
             account,
@@ -116,6 +118,27 @@ impl Resolver {
             self.check_revision(revision)?;
             return Ok(cached);
         }
+        let id = Url::parse(&canonical)
+            .ok()
+            .and_then(|url| {
+                url.query_pairs()
+                    .find(|(name, _)| name == "v")
+                    .map(|(_, id)| id.into_owned())
+            })
+            .ok_or_else(AppError::internal)?;
+        // The common path stays in Rust. Ciphered/unsupported/rejected sources retain
+        // the complete frozen-extractor fallback and its account/availability rules.
+        let direct = async {
+            let track = self.direct.resolve(&id).await?;
+            self.probe(&track).await?;
+            Ok::<_, AppError>(track)
+        };
+        if let Ok(Ok(mut track)) = timeout(Duration::from_secs(2), direct).await {
+            self.check_revision(revision)?;
+            track.account_revision = revision;
+            self.remember(key, track.clone())?;
+            return Ok(track);
+        }
         let mut last_error = AppError::internal();
         // One tested client avoids the default's multi-client/JS work and delayed URLs.
         // The ordinary resolver remains the compatibility fallback, with its timing rules intact.
@@ -130,14 +153,7 @@ impl Resolver {
                     Ok(()) => {
                         self.check_revision(revision)?;
                         track.account_revision = revision;
-                        let mut cache = self.cache.lock().map_err(|_| AppError::internal())?;
-                        cache.retain(|entry| entry.key != key);
-                        cache.push_front(CachedStream {
-                            key,
-                            track: track.clone(),
-                            created: Instant::now(),
-                        });
-                        cache.truncate(8);
+                        self.remember(key, track.clone())?;
                         return Ok(track);
                     }
                     Err(error) => last_error = error,
@@ -151,6 +167,22 @@ impl Resolver {
             }
         }
         Err(last_error)
+    }
+
+    pub async fn warm_up(&self) {
+        self.direct.warm_up().await;
+    }
+
+    fn remember(&self, key: String, track: ResolvedTrack) -> Result<()> {
+        let mut cache = self.cache.lock().map_err(|_| AppError::internal())?;
+        cache.retain(|entry| entry.key != key);
+        cache.push_front(CachedStream {
+            key,
+            track,
+            created: Instant::now(),
+        });
+        cache.truncate(8);
+        Ok(())
     }
 
     fn check_revision(&self, revision: u64) -> Result<()> {
@@ -199,6 +231,16 @@ impl StreamSource {
         )?)
         .await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_source(path: &str) -> StreamSource {
+    StreamSource {
+        url: path.into(),
+        headers: BTreeMap::new(),
+        available_at: None,
+        account_source: false,
     }
 }
 
@@ -445,30 +487,6 @@ fn availability_delay(ready: f64, now: f64) -> Result<Duration> {
     }))
 }
 
-pub(crate) async fn warm_up(paths: &RuntimePaths) -> Result<()> {
-    let mut command = Command::new(paths.require("yt-dlp")?);
-    command
-        .args([
-            "--ignore-config",
-            "--no-plugin-dirs",
-            "--no-remote-components",
-            "--version",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    let mut child = command.spawn().map_err(|_| AppError::internal())?;
-    let _group = ProcessGroup(child.id());
-    timeout(Duration::from_secs(20), child.wait())
-        .await
-        .map_err(|_| AppError::internal())?
-        .map_err(|_| AppError::internal())?;
-    Ok(())
-}
-
 // Cancellation/timeouts terminate yt-dlp and its transient JavaScript runtime together.
 struct ProcessGroup(Option<u32>);
 
@@ -562,7 +580,7 @@ struct ProviderFormat {
     http_headers: BTreeMap<String, String>,
 }
 
-fn parse_metadata(json: &[u8]) -> Result<ResolvedTrack> {
+pub(crate) fn parse_metadata(json: &[u8]) -> Result<ResolvedTrack> {
     let metadata: Metadata = serde_json::from_slice(json).map_err(|_| {
         AppError::new(
             "provider_response",
@@ -680,6 +698,34 @@ fn metadata_number(value: Option<f64>) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "real bundled extractor and YouTube range probes for both guest compatibility profiles"]
+    async fn live_compatibility_profiles_return_usable_guest_sources() {
+        let paths = crate::test_audio::paths();
+        let account = Account::new(Arc::new(crate::account::MemoryVault::default()));
+        let resolver = Resolver::new(paths.clone(), account).unwrap();
+        for profile in [Some("visionos"), None] {
+            let started = Instant::now();
+            let track = resolve_profile(
+                &paths,
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                profile,
+                None,
+            )
+            .await
+            .unwrap();
+            resolver.probe(&track).await.unwrap();
+            assert!(!track.inspection.formats.is_empty());
+            assert!(!track.inspection.account_source);
+            println!(
+                "Compatibility profile {}: {} audio formats, usable source in {:?}",
+                profile.unwrap_or("default"),
+                track.inspection.formats.len(),
+                started.elapsed()
+            );
+        }
+    }
 
     #[test]
     fn canonicalizes_supported_links_and_removes_playlist_context() {

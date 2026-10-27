@@ -5,7 +5,7 @@ use std::{
         mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
@@ -41,6 +41,7 @@ pub struct PlaybackSnapshot {
     pub position_seconds: f64,
     pub duration_seconds: Option<f64>,
     pub volume: f64,
+    pub volume_revision: u64,
     pub error: Option<AppError>,
     pub video_track_selected: bool,
     pub decoded_sample_rate_hz: Option<f64>,
@@ -57,6 +58,7 @@ impl Default for PlaybackSnapshot {
             position_seconds: 0.0,
             duration_seconds: None,
             volume: 40.0,
+            volume_revision: 0,
             error: None,
             video_track_selected: false,
             decoded_sample_rate_hz: None,
@@ -70,6 +72,7 @@ enum Operation {
     Pause(bool),
     Seek(f64),
     Volume(f64),
+    ToggleMute,
     Stop,
     Shutdown,
 }
@@ -176,6 +179,9 @@ impl Player {
         }
         self.request(Operation::Volume(volume)).await
     }
+    pub async fn toggle_mute(&self) -> Result<PlaybackSnapshot> {
+        self.request(Operation::ToggleMute).await
+    }
     pub async fn stop(&self) -> Result<PlaybackSnapshot> {
         self.request(Operation::Stop).await
     }
@@ -211,6 +217,8 @@ fn worker(
     let mut engine: Option<Mpv> = None;
     let mut snapshot = PlaybackSnapshot::default();
     let mut next_playback_id = 0_u64;
+    let mut last_audible_volume = snapshot.volume;
+    let mut last_refresh = Instant::now();
     while !stopping.load(Ordering::Relaxed) {
         let active = matches!(
             snapshot.status,
@@ -222,8 +230,16 @@ fn worker(
             receiver.recv_timeout(Duration::from_millis(if active { 250 } else { 1000 }))
         };
         let previous = snapshot.clone();
-        if let Some(engine) = engine.as_ref() {
+        let volume_only = request.as_ref().is_ok_and(|request| {
+            matches!(
+                &request.operation,
+                Operation::Volume(_) | Operation::ToggleMute
+            )
+        });
+        let poll = !volume_only || last_refresh.elapsed() >= Duration::from_millis(250);
+        if poll && let Some(engine) = engine.as_ref() {
             refresh(engine, &mut snapshot);
+            last_refresh = Instant::now();
         }
         match request {
             Ok(Request {
@@ -237,6 +253,7 @@ fn worker(
                     &mut engine,
                     &mut snapshot,
                     &mut next_playback_id,
+                    &mut last_audible_volume,
                 );
                 if let Err(error) = &result
                     && error.code != "cancelled"
@@ -254,7 +271,9 @@ fn worker(
             Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {}
         }
-        if snapshot != previous {
+        // Volume acknowledgements already carry the new gain/revision to the caller.
+        // Keep position/EOF publication at its normal cadence during a slider sweep.
+        if snapshot != previous && (!volume_only || poll) {
             if let Ok(mut shared) = shared.lock() {
                 *shared = snapshot.clone();
             }
@@ -270,6 +289,7 @@ fn apply(
     engine: &mut Option<Mpv>,
     snapshot: &mut PlaybackSnapshot,
     next_playback_id: &mut u64,
+    last_audible_volume: &mut f64,
 ) -> Result<()> {
     match operation {
         Operation::WarmUp => {
@@ -352,10 +372,15 @@ fn apply(
             snapshot.position_seconds = position;
         }
         Operation::Volume(volume) => {
-            if let Some(engine) = engine {
-                engine.set("volume", &volume.to_string())?;
-            }
-            snapshot.volume = volume;
+            apply_volume(engine.as_ref(), snapshot, last_audible_volume, volume)?;
+        }
+        Operation::ToggleMute => {
+            let volume = if snapshot.volume > 0.0 {
+                0.0
+            } else {
+                *last_audible_volume
+            };
+            apply_volume(engine.as_ref(), snapshot, last_audible_volume, volume)?;
         }
         Operation::Stop => {
             if let Some(engine) = engine.as_ref() {
@@ -363,13 +388,32 @@ fn apply(
                 engine.set("http-header-fields", "")?;
             }
             let volume = snapshot.volume;
+            let volume_revision = snapshot.volume_revision;
             *snapshot = PlaybackSnapshot {
                 volume,
+                volume_revision,
                 ..PlaybackSnapshot::default()
             };
         }
         Operation::Shutdown => {}
     }
+    Ok(())
+}
+
+fn apply_volume(
+    engine: Option<&Mpv>,
+    snapshot: &mut PlaybackSnapshot,
+    last_audible_volume: &mut f64,
+    volume: f64,
+) -> Result<()> {
+    if let Some(engine) = engine {
+        engine.set("volume", &volume.to_string())?;
+    }
+    if volume > 0.0 {
+        *last_audible_volume = volume;
+    }
+    snapshot.volume = volume;
+    snapshot.volume_revision = snapshot.volume_revision.wrapping_add(1);
     Ok(())
 }
 
@@ -432,4 +476,78 @@ fn refresh(engine: &Mpv, snapshot: &mut PlaybackSnapshot) {
     }
     snapshot.video_track_selected = engine.number("vid").is_some_and(|id| id > 0.0);
     snapshot.decoded_sample_rate_hz = engine.number("audio-params/samplerate");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{sync::atomic::AtomicUsize, time::Instant};
+    use tokio::sync::watch;
+
+    #[tokio::test]
+    async fn mute_restores_the_last_nonzero_volume_without_starting_audio() {
+        let player = Player::new(crate::test_audio::paths(), Arc::new(|_| {}));
+        let original = player.volume(73.0).await.unwrap();
+        let muted = player.toggle_mute().await.unwrap();
+        assert_eq!(muted.volume, 0.0);
+        assert!(muted.volume_revision > original.volume_revision);
+        player.stop().await.unwrap();
+        assert_eq!(player.toggle_mute().await.unwrap().volume, 73.0);
+        player.volume(0.0).await.unwrap();
+        assert_eq!(player.toggle_mute().await.unwrap().volume, 73.0);
+        player.shutdown();
+    }
+
+    #[tokio::test]
+    #[ignore = "real libmpv volume latency during local silent audio; no network"]
+    async fn native_volume_stays_responsive_without_flooding_playback_events() {
+        let published = Arc::new(AtomicUsize::new(0));
+        let marker = published.clone();
+        let player = Player::new(
+            crate::test_audio::paths(),
+            Arc::new(move |_| {
+                marker.fetch_add(1, Ordering::Relaxed);
+            }),
+        );
+        let audio = crate::test_audio::silence();
+        let (track, format, source) = crate::test_audio::selection(&audio);
+        let (_cancel, receiver) = watch::channel(0);
+        player.volume(0.0).await.unwrap();
+        player
+            .load(track, format, source, receiver, 0)
+            .await
+            .unwrap();
+        let start = Instant::now();
+        while player.snapshot().unwrap().status != PlaybackStatus::Playing {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "{:?}",
+                player.snapshot().unwrap()
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        published.store(0, Ordering::Relaxed);
+        let mut timings = Vec::new();
+        let sweep = Instant::now();
+        for step in 0..100 {
+            let start = Instant::now();
+            player.volume(f64::from(step)).await.unwrap();
+            timings.push(start.elapsed());
+        }
+        timings.sort();
+        let updates = published.load(Ordering::Relaxed);
+        println!(
+            "Native volume: p95 {:?}; max {:?}; {updates} playback events in {:?}",
+            timings[94],
+            timings[99],
+            sweep.elapsed()
+        );
+        player.stop().await.unwrap();
+        player.shutdown();
+        assert!(timings[94] < Duration::from_millis(16));
+        assert!(
+            updates < 10,
+            "slider input must not flood full playback-state events: {updates}"
+        );
+    }
 }

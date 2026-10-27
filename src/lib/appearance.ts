@@ -1,6 +1,6 @@
 export const DEFAULT_THEME = { id: 'duskfox', name: 'Duskfox', variant: 'Clear glass' };
-export const GLASS_TINT_MIN = 8;
-export const GLASS_TINT_MAX = 90;
+export const GLASS_TINT_MIN = 50;
+export const GLASS_TINT_MAX = 100;
 export const ACCENTS = [
   { id: 'rose', name: 'Rose', color: '#ea9a97' },
   { id: 'iris', name: 'Iris', color: '#c4a7e7' },
@@ -22,12 +22,16 @@ export function defaultAppearance(reducedTransparency = false): AppearancePrefer
   return {
     version: 2,
     accent: 'rose',
-    glassOpacity: 18,
+    glassOpacity: 50,
     density: 'comfortable',
     sidebarCollapsed: false,
     showNowPlaying: true,
     reducedTransparency,
   };
+}
+
+export function usesOpaqueMaterial(preferences: AppearancePreferences): boolean {
+  return preferences.reducedTransparency || preferences.glassOpacity === GLASS_TINT_MAX;
 }
 
 export function normalizeAppearance(value: unknown, systemReduced = false): AppearancePreferences {
@@ -64,7 +68,11 @@ export function normalizeAppearance(value: unknown, systemReduced = false): Appe
 export function loadAppearance(storage: Storage, systemReduced: boolean): AppearancePreferences {
   try {
     const saved = storage.getItem('vessel:appearance:v2');
-    if (saved) return normalizeAppearance(JSON.parse(saved), systemReduced);
+    if (saved) {
+      const preferences = normalizeAppearance(JSON.parse(saved), systemReduced);
+      saveAppearance(storage, preferences);
+      return preferences;
+    }
     const legacy = storage.getItem('vessel:appearance:v1');
     if (legacy) {
       const migrated = normalizeAppearance(JSON.parse(legacy), systemReduced);

@@ -1,6 +1,7 @@
 pub mod account;
 pub mod application;
 pub mod catalog;
+mod direct;
 pub mod error;
 pub mod home;
 pub mod library;
@@ -11,3 +12,5 @@ pub mod queue;
 mod radio;
 pub mod runtime;
 pub mod sign_in;
+#[cfg(test)]
+mod test_audio;

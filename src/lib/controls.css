@@ -257,6 +257,12 @@
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
+.player-volume .volume-mute {
+  width: 23px;
+  height: 26px;
+  padding: 0;
+  flex-shrink: 0;
+}
 button.session-label {
   width: 100%;
   text-align: left;

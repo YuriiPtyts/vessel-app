@@ -124,6 +124,7 @@ export interface PlaybackSnapshot {
   positionSeconds: number;
   durationSeconds: number | null;
   volume: number;
+  volumeRevision: number;
   error: AppError | null;
   videoTrackSelected: boolean;
   decodedSampleRateHz: number | null;
@@ -138,6 +139,7 @@ export const emptyPlayback: PlaybackSnapshot = {
   positionSeconds: 0,
   durationSeconds: null,
   volume: 40,
+  volumeRevision: 0,
   error: null,
   videoTrackSelected: false,
   decodedSampleRateHz: null,
@@ -166,6 +168,7 @@ export const getPlayback = () => invoke<PlaybackSnapshot>('playback_snapshot');
 export const setPaused = (paused: boolean) => invoke<PlaybackSnapshot>('set_paused', { paused });
 export const seekTrack = (position: number) => invoke<PlaybackSnapshot>('seek_track', { position });
 export const setVolume = (volume: number) => invoke<PlaybackSnapshot>('set_volume', { volume });
+export const toggleMute = () => invoke<PlaybackSnapshot>('toggle_mute');
 export const stopPlayback = () => invoke<PlaybackSnapshot>('stop_playback');
 export const onPlayback = (callback: (snapshot: PlaybackSnapshot) => void) =>
   listen<PlaybackSnapshot>('playback-state', ({ payload }) => callback(payload));

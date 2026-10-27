@@ -1,6 +1,5 @@
 use std::{
     path::PathBuf,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -121,21 +120,22 @@ async fn invalid_input_never_starts_the_resolver_or_engine() {
 }
 
 #[tokio::test]
-#[ignore = "starts the real bundled resolver; run explicitly"]
+#[ignore = "starts a real provider request then cancels it; run explicitly"]
 async fn cancellation_releases_the_resolver_promptly() {
     let paths = RuntimePaths::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime"));
-    let app = Arc::new(Application::new(paths, |_| {}).unwrap());
-    let request = app.clone();
-    let pending = tokio::spawn(async move {
-        request
-            .inspect("https://music.youtube.com/watch?v=dQw4w9WgXcQ")
-            .await
-    });
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    let app = Application::new(paths, |_| {}).unwrap();
+    let mut pending = Box::pin(app.inspect("https://music.youtube.com/watch?v=dQw4w9WgXcQ"));
+    // Poll once so the request owns the resolver slot and has begun I/O. A fixed
+    // sleep races successful direct resolution now that it can finish in <250ms.
+    std::future::poll_fn(|context| {
+        use std::{future::Future, task::Poll};
+        assert!(pending.as_mut().poll(context).is_pending());
+        Poll::Ready(())
+    })
+    .await;
     app.cancel_inspection();
     let result = tokio::time::timeout(Duration::from_secs(2), pending)
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(result.unwrap_err().code, "cancelled");
     assert_eq!(

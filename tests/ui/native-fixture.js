@@ -80,11 +80,13 @@ export async function nativeFixture(page, options = {}) {
       positionSeconds: 0,
       durationSeconds: null,
       volume: 40,
+      volumeRevision: 0,
       error: null,
       videoTrackSelected: false,
       decodedSampleRateHz: null,
     };
     let inspection = null;
+    let lastAudibleVolume = 40;
     let queue = {
       revision: 0,
       tracks: [],
@@ -347,7 +349,13 @@ export async function nativeFixture(page, options = {}) {
             if (options.volumeDelay)
               await new Promise((resolve) => setTimeout(resolve, options.volumeDelay));
             snapshot.volume = args.volume;
+            if (args.volume > 0) lastAudibleVolume = args.volume;
+            snapshot.volumeRevision++;
             window.__vesselVolumeInFlight--;
+            break;
+          case 'toggle_mute':
+            snapshot.volume = snapshot.volume > 0 ? 0 : lastAudibleVolume;
+            snapshot.volumeRevision++;
             break;
           case 'cancel_inspection':
             return;

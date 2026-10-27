@@ -141,6 +141,7 @@ impl Mpv {
             ("demuxer-max-back-bytes", "8388608"),
             ("network-timeout", "15"),
             ("gapless-audio", "yes"),
+            ("audio-buffer", "0.05"),
         ] {
             let name = cstring(name)?;
             let value = cstring(value)?;
@@ -208,6 +209,33 @@ impl Mpv {
             )
         };
         (status >= 0 && value.is_finite()).then_some(value)
+    }
+
+    #[cfg(all(test, target_os = "macos"))]
+    fn text(&self, name: &str) -> Option<String> {
+        let name = cstring(name).ok()?;
+        let mut value = std::ptr::null_mut::<c_char>();
+        // SAFETY: MPV_FORMAT_STRING writes an allocated char pointer. It is copied then freed with mpv_free.
+        unsafe {
+            let free = self
+                ._library
+                .get::<unsafe extern "C" fn(*mut c_void)>(b"mpv_free\0")
+                .ok()?;
+            let status = (self.get_property)(
+                self.handle.as_ptr(),
+                name.as_ptr(),
+                1,
+                (&mut value as *mut *mut c_char).cast(),
+            );
+            if status < 0 || value.is_null() {
+                return None;
+            }
+            let text = std::ffi::CStr::from_ptr(value)
+                .to_string_lossy()
+                .into_owned();
+            free(value.cast());
+            Some(text)
+        }
     }
 
     pub fn flag(&self, name: &str) -> Option<bool> {
@@ -286,6 +314,74 @@ fn check(code: c_int) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "real muted native decoding and temporary aggregate-device publish/remove; no network"]
+    fn native_audio_survives_device_publication_and_removal() {
+        use std::time::{Duration, Instant};
+        let engine = Mpv::open(&crate::test_audio::paths()).unwrap();
+        let wav = crate::test_audio::silence_at(44100);
+        engine.set("volume", "0").unwrap();
+        engine.set("ao", "coreaudio,avfoundation").unwrap();
+        engine.set("loop-file", "inf").unwrap();
+        engine
+            .run(&["loadfile", wav.path().to_str().unwrap(), "replace"])
+            .unwrap();
+        let start = Instant::now();
+        while engine.number("audio-params/samplerate").is_none()
+            || engine
+                .number("time-pos")
+                .is_none_or(|position| position < 0.1)
+        {
+            assert!(!engine.events().failed);
+            assert!(start.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        println!(
+            "Native hotplug output: {:?}; format {:?}",
+            engine.text("current-ao"),
+            engine.text("audio-out-params/format")
+        );
+        let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../scripts/audio-hotplug.swift");
+        let mut trigger = std::process::Command::new("/usr/bin/swift");
+        trigger.arg(script).arg("--switch-default");
+        if std::env::var("VESSEL_AUDIO_STRESS").as_deref() == Ok("1") {
+            trigger.arg("--stress");
+        }
+        let status = trigger.status().unwrap();
+        assert!(status.success(), "native hotplug trigger failed");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!engine.events().failed);
+        assert!(engine.number("audio-params/samplerate").is_some());
+        assert!(
+            engine
+                .number("time-pos")
+                .is_some_and(|position| position > 0.1)
+        );
+        assert!(engine.text("current-ao").is_some());
+        println!(
+            "Native output after hotplug: {:?}",
+            engine.text("current-ao")
+        );
+        let resumed_position = engine.number("time-pos").unwrap();
+        let recovery = Instant::now();
+        while engine
+            .number("time-pos")
+            .is_none_or(|position| position <= resumed_position + 0.05)
+        {
+            assert!(!engine.events().failed);
+            assert!(
+                recovery.elapsed() < Duration::from_secs(3),
+                "native playback did not advance after output restoration: position {resumed_position:?} -> {:?}",
+                engine.number("time-pos")
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        println!("Native output resumed in {:?}", recovery.elapsed());
+        engine.run(&["stop"]).unwrap();
+    }
 
     #[test]
     #[ignore = "loads bundled libmpv and reads actual native volume; no audio is played"]
