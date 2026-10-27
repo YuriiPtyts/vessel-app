@@ -321,7 +321,12 @@ mod tests {
     fn native_audio_survives_device_publication_and_removal() {
         use std::time::{Duration, Instant};
         let engine = Mpv::open(&crate::test_audio::paths()).unwrap();
-        let wav = crate::test_audio::silence_at(44100);
+        let channels = if std::env::var("VESSEL_AUDIO_MONO").as_deref() == Ok("1") {
+            1
+        } else {
+            2
+        };
+        let wav = crate::test_audio::silence_at(44100, channels);
         engine.set("volume", "0").unwrap();
         engine.set("ao", "coreaudio,avfoundation").unwrap();
         engine.set("loop-file", "inf").unwrap();
@@ -346,7 +351,10 @@ mod tests {
         let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../scripts/audio-hotplug.swift");
         let mut trigger = std::process::Command::new("/usr/bin/swift");
-        trigger.arg(script).arg("--switch-default");
+        trigger
+            .arg(script)
+            .arg("--switch-default")
+            .env_remove("DYLD_INSERT_LIBRARIES");
         if std::env::var("VESSEL_AUDIO_STRESS").as_deref() == Ok("1") {
             trigger.arg("--stress");
         }

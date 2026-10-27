@@ -2,6 +2,8 @@
 
 Updated 2026-10-27. **The physical headphone crash is not fixed or reproduced by the synthetic test.** The packaged changes improve tint, source startup, and volume; no audio-backend workaround is shipped.
 
+The owner has now confirmed **ordinary analog headphones through the 3.5 mm jack**. A subsequent report from 2026-10-27 17:07 repeats the same faulting thread and all three libmpv offsets; its application UUID matches the previously packaged `56479dd` build. This is not an old-copy explanation. The audible slider delay was also reported again: previous acknowledgement timings are not proof of audible gain latency.
+
 ## Captured evidence
 
 The original `vessel-app-2026-10-26-222034.ips` report shows:
@@ -23,11 +25,20 @@ node scripts/inspect-crash.mjs "$HOME/Library/Logs/DiagnosticReports/Retired/ves
 node scripts/probe-audio-device.mjs
 ```
 
-This runs real muted libmpv playback of local 44.1 kHz mono silence. The Swift helper creates a temporary aggregate device, selects it, destroys it while selected, restores the original default output, and verifies restoration. The wrapper selects 20 cycles and bounds the process group to 45 seconds, including compilation, so a native teardown hang cannot leave the command running indefinitely. For a clean build, increase `VESSEL_AUDIO_PROBE_TIMEOUT_MS` (maximum 600000). It installs no driver. The underlying ignored Rust test performs three cycles without `VESSEL_AUDIO_STRESS=1`.
+This runs real muted libmpv playback of local 44.1 kHz **stereo** silence. `VESSEL_AUDIO_MONO=1` selects the earlier mono fixture. The Swift helper creates a temporary aggregate device, selects it, destroys it while selected, restores the original default output, and verifies restoration. The wrapper selects 20 cycles and bounds the process group to 45 seconds, including compilation, so a native teardown hang cannot leave the command running indefinitely. For a clean build, increase `VESSEL_AUDIO_PROBE_TIMEOUT_MS` (maximum 600000). It installs no driver. The underlying ignored Rust test performs three cycles without `VESSEL_AUDIO_STRESS=1`; the helper finishes cleanup if its parent exits and reports actual completed cycles.
 
 The test checks native playback/error state and continued position advancement after restoration, allowing a bounded three-second recovery window. An initial 200 ms advancement assertion failed and one failure hung in teardown; that deadline was too short. With bounded polling, the next pass observed advancement in **326 ms** and normal teardown. Keep the outer watchdog when testing unknown native-engine behavior.
 
 Observed output was **AVFoundation, S16**, before and after the 20-cycle run. This is **not** proof of CoreAudio-driver recovery or the owner's physical headphone path. Earlier aggregate-device/samplerate stress also passed without reproducing the reported crash. No regression test currently catches the actual null-pointer failure reliably.
+
+### Further observations after the 3.5 mm clarification
+
+- The stereo fixture selected actual **CoreAudio/S16** and passed 20 cycles with `MallocScribble=1` (observed post-route advancement 110 ms). A temporary float-planar stereo variant selected **CoreAudio/floatp** and passed 20 cycles (55 ms). A mono float variant under Guard Malloc selected AVFoundation and passed. None reproduced the SIGSEGV.
+- A temporary real-GUI/muted guest-source-switching probe also passed 20 cycles. Rapid concurrent samplerate reinitialization instead hung until the watchdog; that was a different symptom and the throwaway reinit/probe code was removed.
+- Built-in output inventory at inspection time exposed speakers only, with no settable data-source selector. The physical headphone transition cannot currently be driven through that property.
+- These device notifications are **system-wide**, not process-isolated. The new report's notification voucher names `swift-frontend`, consistent with the Swift device-change probe, which may explain that incident's apparently random timing in another running Vessel instance. Avoid treating a passing test process as proof that a simultaneously running app survived.
+- Disassembly of the matching library identifies the callback at file address `0x130944`, including the literal `Handling potential hotplug event...`. It loads `ao->log` before the logging call. The captured crash is the null dereference at `0x4fbec` inside that call; the image/offset match is established, but a reliable same-failure loop is still missing.
+- The pinned MPVKit patch directory contains only the MoltenVK/static-build patches, not the upstream CoreAudio cleanup patch. A replacement engine still needs reproducible build/provenance and real regression verification; none is shipped by the remembered-account follow-up.
 
 ## Upstream lead and rejected workaround
 
@@ -38,7 +49,7 @@ Observed output was **AVFoundation, S16**, before and after the 20-cycle run. Th
 
 ## Resume with the real reproducer
 
-1. Ask which headphones/output connection failed: **3.5 mm, USB, or Bluetooth**, device model, and whether they were the system default output. That answer is still missing.
+1. The connection is confirmed **3.5 mm**. Establish a repeatable physical headphone-to-speaker transition in the normal app, including its track/quality and playing/paused state. For volume, clarify whether the thumb itself lags or only the audible change.
 2. Launch the rebuilt `src-tauri/target/release/bundle/macos/Vessel.app`, play the same track/quality if known, and record the disconnect time and whether playback was active or paused. Disconnect/reconnect the actual device. Keep playback at a comfortable volume; this is a human hardware test.
 3. If it crashes, locate the new report in DiagnosticReports (including Retired) and run the inspector. Compare the thread, exception, image UUID/offsets against the original before treating it as the same failure. Do not commit the raw report.
 4. Establish a repeatable failing loop on that device. Inspect the pinned corresponding source and MPVKit patch set, symbolicate the relevant frames, and verify whether upstream #18383 addresses the observed lifetime failure. Do not replace this with more assertions that merely require a particular backend.

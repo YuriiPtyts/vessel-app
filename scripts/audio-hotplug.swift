@@ -19,7 +19,10 @@ let uid = Unmanaged<CFString>.fromOpaque(uidPointer!).takeRetainedValue()
 
 let switchDefault = CommandLine.arguments.contains("--switch-default")
 let cycles = CommandLine.arguments.contains("--stress") ? 20 : 3
+let owner = getppid()
+var completed = 0
 for _ in 0..<cycles {
+    if getppid() != owner { break }
     var aggregate = AudioDeviceID(0)
     let description: [String: Any] = [
         kAudioAggregateDeviceNameKey: "Vessel temporary audio regression device",
@@ -55,6 +58,7 @@ for _ in 0..<cycles {
         }
     }
     Thread.sleep(forTimeInterval: 0.2)
+    completed += 1
 }
 if switchDefault {
     address.mSelector = kAudioHardwarePropertyDefaultOutputDevice
@@ -63,4 +67,4 @@ if switchDefault {
     try checked(AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &restored), "verify restored output")
     guard restored == output else { throw NSError(domain: "VesselAudioProbe", code: 1, userInfo: [NSLocalizedDescriptionKey: "original output was not restored"]) }
 }
-print("Native audio device publication/removal completed (\(cycles) cycles); original output verified.")
+print("Native audio device publication/removal completed (\(completed)/\(cycles) cycles); original output verified.")

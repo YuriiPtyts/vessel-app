@@ -13,21 +13,22 @@ pub fn paths() -> RuntimePaths {
     )
 }
 pub fn silence() -> tempfile::NamedTempFile {
-    silence_at(48000)
+    silence_at(48000, 1)
 }
-pub fn silence_at(rate: u32) -> tempfile::NamedTempFile {
+pub fn silence_at(rate: u32, channels: u16) -> tempfile::NamedTempFile {
     let mut file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
-    let bytes = rate * 2 * 30;
+    let frame_bytes = channels * 2;
+    let bytes = rate * u32::from(frame_bytes) * 30;
     let mut header = Vec::new();
     header.extend_from_slice(b"RIFF");
     header.extend_from_slice(&(bytes + 36).to_le_bytes());
     header.extend_from_slice(b"WAVEfmt ");
     header.extend_from_slice(&16_u32.to_le_bytes());
     header.extend_from_slice(&1_u16.to_le_bytes());
-    header.extend_from_slice(&1_u16.to_le_bytes());
+    header.extend_from_slice(&channels.to_le_bytes());
     header.extend_from_slice(&rate.to_le_bytes());
-    header.extend_from_slice(&(rate * 2).to_le_bytes());
-    header.extend_from_slice(&2_u16.to_le_bytes());
+    header.extend_from_slice(&(rate * u32::from(frame_bytes)).to_le_bytes());
+    header.extend_from_slice(&frame_bytes.to_le_bytes());
     header.extend_from_slice(&16_u16.to_le_bytes());
     header.extend_from_slice(b"data");
     header.extend_from_slice(&bytes.to_le_bytes());
