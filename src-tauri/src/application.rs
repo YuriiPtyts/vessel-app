@@ -75,7 +75,11 @@ impl Application {
     ) -> Result<Arc<Self>> {
         #[cfg(target_os = "macos")]
         let vault: Arc<dyn SessionVault> = Arc::new(crate::account::KeychainVault);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let vault: Arc<dyn SessionVault> = Arc::new(crate::account::WindowsVault::new(
+            queue_path.with_file_name("google-session.dpapi"),
+        ));
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let vault: Arc<dyn SessionVault> = Arc::new(MemoryVault::default());
         Self::with_services(paths, library, Some(queue_path), vault, emit)
     }

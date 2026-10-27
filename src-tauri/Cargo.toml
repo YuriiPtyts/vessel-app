@@ -1,6 +1,6 @@
 [package]
 name = "vessel-app"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 description = "A lightweight, search-first desktop music client"
 edition = "2024"
 rust-version = "1.90"
@@ -37,3 +37,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWind
 codegen-units = 1
 lto = "thin"
 strip = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Foundation", "Media", "Win32_Foundation", "Win32_System_WinRT"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_JobObjects", "Win32_System_Threading"] }

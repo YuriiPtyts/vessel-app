@@ -31,6 +31,12 @@ The host remains macOS 27.0.1 arm64. Minimum-OS/clean-machine testing remains a 
 - License: https://github.com/denoland/deno/blob/v2.9.8/LICENSE.md
 - Used only while resolving streams/challenges. It is not an application server or background service.
 
+## Windows x64 runtime
+
+- Windows preparation uses the separate SHA-256-pinned `native-dependencies.windows.json` manifest. It selects zhongfly/mpv-winbuild's general x86-64 **LGPL** development library from `2026-10-27-ad5877edab` (not the AVX2/v3 or GPL build), upstream yt-dlp `2026.10.21`, and Deno `2.9.8` for Windows x64.
+- The engine is loaded as `libmpv-2.dll`; the upstream Windows DLL does not contain Vessel's macOS output-gain extension. Windows uses the standard mpv volume/WASAPI path. The build checks native mpv configuration and installed-library decoding in addition to archive hashes.
+- The extractor executable is a separate process and bundles its Python runtime. The Windows installer also handles the Microsoft WebView2 runtime. Build provenance and upstream licensing references are retained with the bundled runtime. See [Windows builds](windows-build.md).
+
 ## Before public distribution
 
 These references record provenance; they are not a complete redistribution package. Include full license texts, transitive attribution, corresponding source/build materials or the required source offer, and verify all applicable artifact-specific obligations before publishing downloads. Exercise signing/notarization and user-replaceability of the LGPL library. The current local spike is not a distribution-ready release.

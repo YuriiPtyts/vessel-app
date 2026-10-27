@@ -15,8 +15,14 @@ use std::{
 };
 use tokio::sync::{Mutex as AsyncMutex, watch};
 
+#[cfg(target_os = "macos")]
 const SERVICE: &str = "app.vessel.desktop.google-session";
+#[cfg(target_os = "macos")]
 const ENTRY: &str = "youtube-music";
+#[cfg(target_os = "windows")]
+mod windows_vault;
+#[cfg(target_os = "windows")]
+pub(crate) use windows_vault::WindowsVault;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -592,11 +598,16 @@ pub(crate) fn session_error() -> AppError {
     )
 }
 fn vault_error() -> AppError {
-    AppError::new(
-        "keychain_unavailable",
-        "macOS Keychain could not read or save the YouTube session. Unlock Keychain and try again.",
-        true,
-    )
+    #[cfg(target_os = "windows")]
+    let message = "Windows could not read or save the protected YouTube session. Try reconnecting.";
+    #[cfg(target_os = "windows")]
+    let code = "credential_store_unavailable";
+    #[cfg(not(target_os = "windows"))]
+    let code = "keychain_unavailable";
+    #[cfg(not(target_os = "windows"))]
+    let message =
+        "macOS Keychain could not read or save the YouTube session. Unlock Keychain and try again.";
+    AppError::new(code, message, true)
 }
 
 #[cfg(test)]

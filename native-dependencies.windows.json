@@ -1,0 +1,35 @@
+{
+  "platform": "win32-x64",
+  "dependencies": [
+    {
+      "name": "libmpv",
+      "version": "0.41.0-git-ad5877edab-lgpl",
+      "url": "https://github.com/zhongfly/mpv-winbuild/releases/download/2026-10-27-ad5877edab/mpv-dev-lgpl-x86_64-20261027-git-ad5877edab.7z",
+      "sha256": "9955162e058856db8495b81cf1bc24d5be0cd0941ed68544229671f40a8d727d",
+      "file": "libmpv-2.dll",
+      "archiveEntry": "libmpv-2.dll",
+      "source": "https://github.com/mpv-player/mpv/tree/ad5877edab",
+      "buildSource": "https://github.com/zhongfly/mpv-winbuild/tree/2026-10-27-ad5877edab",
+      "license": "Upstream's LGPL build, dynamically loaded; native checks verify libmpv's GPL-disabled configuration"
+    },
+    {
+      "name": "yt-dlp",
+      "version": "2026.10.21",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.21/yt-dlp.exe",
+      "sha256": "33121d192d706e62f684a06f80918e3f3a8ba52ac3a65213b6951c39c7d9f555",
+      "file": "yt-dlp.exe",
+      "source": "https://github.com/yt-dlp/yt-dlp/tree/2026.10.21",
+      "license": "GPL-3.0-or-later frozen executable; separate process"
+    },
+    {
+      "name": "deno",
+      "version": "2.9.8",
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-pc-windows-msvc.zip",
+      "sha256": "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf",
+      "file": "deno.exe",
+      "archiveEntry": "deno.exe",
+      "source": "https://github.com/denoland/deno/tree/v2.9.8",
+      "license": "MIT with third-party components"
+    }
+  ]
+}

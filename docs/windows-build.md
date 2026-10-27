@@ -1,0 +1,30 @@
+# Windows x64 beta
+
+The first Windows package targets Windows 10/11 x64 and uses a native MSVC build, WebView2, and a per-user NSIS installer. The installer includes the playback/extractor runtimes and the Microsoft WebView2 bootstrapper. A missing WebView2 runtime is installed automatically; no manual Python, mpv, or Deno setup is required.
+
+## Build
+
+On Windows with x64 Node.js, Rust/MSVC, the Windows SDK, and the built-in `tar.exe`:
+
+```sh
+npm ci
+npm run package:windows
+```
+
+`native-dependencies.windows.json` pins the exact Windows LGPL libmpv, yt-dlp, and Deno downloads and their SHA-256 hashes. Preparation verifies Windows x64 PE headers, the GPL-disabled libmpv configuration, and absence of explicit GPL/nonfree FFmpeg enable flags. The selected upstream LGPL build's provenance is recorded; this is not a complete independent transitive-license audit.
+
+The output is `.cache/releases/v0.1.0-beta.3/Vessel-0.1.0-beta.3-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
+
+## Platform behavior
+
+- Rust loads `runtime/libmpv-2.dll`, `yt-dlp.exe`, and `deno.exe` from the installed application, including paths with spaces. The Windows backend uses standard mpv/WASAPI software volume with the bounded audio buffer; the macOS-specific output-gain extension is not required by the Windows DLL.
+- Windows System Media Transport Controls route previous/next and play/pause to the Rust queue/player. Support can be unavailable on Windows editions without the required media components; the on-screen player remains usable.
+- Remembered account records are encrypted for the current user with Windows DPAPI and atomically stored under Vessel's application-data directory. They are never saved as plaintext session JSON. Sign-out removes the protected record. The isolated Google browser window remains subject to Google's embedded-login policies.
+- Extractor processes start without flashing console windows. A per-request Windows job object terminates the extractor and its transient runtime children on cancellation/timeout.
+- Installed data and appearance preferences are separate from the installer directory. The installer is per-user and the beta is not Authenticode-signed.
+
+## Native verification
+
+`.github/workflows/windows-build.yml` builds on a Windows runner. It checks the frontend and Rust code, runs real DPAPI/cancellation filesystem/kernel tests, opens an actual WebView2 window and invokes Rust from the mounted frontend in isolated diagnostic mode, then builds the normal installer. The installer test performs a silent install to a path with spaces, validates the installed runtimes, exercises local muted/null-output decoding and volume through the installed DLL, launches/closes the normal installed application, and uninstalls it.
+
+The null-output decode check does not certify WASAPI on physical speakers, audible volume latency, media-key delivery, real Google credentials, or personalized/Premium playback. Those require owner testing on Windows hardware. See [verification](verification.md) for actual run results and [native dependencies](native-dependencies.md) for provenance and distribution scope.

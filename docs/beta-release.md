@@ -1,9 +1,10 @@
-# Vessel 0.1.0-beta.2
+# Vessel 0.1.0-beta.3
 
-Private Apple Silicon macOS development beta. This is a prerelease, not a stable release.
+Private Apple Silicon macOS and Windows x64 development beta. This is a prerelease, not a stable release.
 
 ## Included changes
 
+- Windows x64 NSIS installer with pinned Windows playback/extraction runtimes, WebView2 setup, DPAPI-protected remembered sessions, native Windows media controls, and bounded extractor process cleanup. See [Windows builds](windows-build.md).
 - New Rust-owned per-player output gain applies after queued PCM, removing the reproduced AVFoundation volume delay. The established loudness curve, mute restoration, and gain across output recreation are preserved.
 - Native macOS Now Playing previous/next and play/pause handlers, independent of renderer keyboard focus. The installed process is named **Vessel** for Neohtop/Activity Monitor; older builds and Cargo development runs use `vessel-app`.
 - Shared genie-style reveals for appearance, account, queue, audio-quality, and now-playing panels, with immediate closing and OS reduced-motion support. See [motion behavior](motion.md).
@@ -13,7 +14,13 @@ Private Apple Silicon macOS development beta. This is a prerelease, not a stable
 
 ## Install the candidate
 
-Download `Vessel-0.1.0-beta.2-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+### macOS
+
+Download `Vessel-0.1.0-beta.3-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+
+### Windows
+
+Run `Vessel-0.1.0-beta.3-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
 
 ### First launch if macOS blocks Vessel
 

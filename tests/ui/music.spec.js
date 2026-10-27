@@ -32,6 +32,11 @@ test('transient surfaces use an anchored genie reveal and settle to their normal
     await page.getByRole('button', { name: button, exact: true }).click();
     const surface = page.getByRole('region', { name: panel, exact: true });
     await expect(surface).toBeVisible();
+    await expect
+      .poll(() =>
+        surface.evaluate((node) => window.__vesselReveals.some((entry) => entry.node === node)),
+      )
+      .toBe(true);
     const sample = await surface.evaluate((node) => {
       const reveal = window.__vesselReveals.findLast((entry) => entry.node === node);
       return {

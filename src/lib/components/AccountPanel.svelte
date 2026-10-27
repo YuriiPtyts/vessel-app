@@ -77,7 +77,7 @@
         : 'Connect Google'}<ArrowUpRight size={15} /></button
     >
     <p class="account-caption">
-      Google opens in its own isolated window and remembers you on this Mac. If Google declines
+      Google opens in an isolated window and remembers you on this device. If Google declines
       embedded sign-in, guest listening stays available.
     </p>
   {/if}
@@ -89,8 +89,9 @@
   <div class="account-privacy">
     <ShieldCheck size={17} />
     <p>
-      Your verified session is saved in macOS Keychain and restored on launch. Sign out clears
-      remembered Google sign-in; local liked songs, history, and appearance stay on this Mac.
+      Your verified session is protected by your operating system and restored on launch. Sign out
+      clears remembered Google sign-in; local liked songs, history, and appearance stay on this
+      device.
     </p>
   </div>
 </section>

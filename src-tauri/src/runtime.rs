@@ -13,17 +13,26 @@ impl RuntimePaths {
     }
 
     pub fn available(&self) -> bool {
-        ["libmpv.dylib", "extractor/yt-dlp_macos", "deno"]
+        ["libmpv", "yt-dlp", "deno"]
             .iter()
-            .all(|name| self.root.join(name).is_file())
+            .all(|name| self.require(name).is_ok())
     }
 
     pub fn require(&self, name: &str) -> Result<PathBuf> {
-        let path = self.root.join(if name == "yt-dlp" {
-            "extractor/yt-dlp_macos"
-        } else {
-            name
-        });
+        #[cfg(target_os = "windows")]
+        let filename = match name {
+            "libmpv" => "libmpv-2.dll",
+            "yt-dlp" => "yt-dlp.exe",
+            "deno" => "deno.exe",
+            name => name,
+        };
+        #[cfg(not(target_os = "windows"))]
+        let filename = match name {
+            "libmpv" => "libmpv.dylib",
+            "yt-dlp" => "extractor/yt-dlp_macos",
+            name => name,
+        };
+        let path = self.root.join(filename);
         if !path.is_file() {
             return Err(AppError::new(
                 "runtime_missing",

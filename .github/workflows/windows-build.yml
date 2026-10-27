@@ -1,0 +1,59 @@
+name: Windows beta build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/windows-build.yml'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'native-dependencies.windows.json'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+      - name: Select Rust toolchain
+        run: rustup override set 1.99.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run prepare:native
+      - run: npm run check
+      - run: npm run build
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features native-diagnostics --locked -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build native WebView2 diagnostic
+        run: npm run tauri -- build --no-bundle --features native-diagnostics
+      - name: Verify actual WebView2 and native IPC
+        run: ./scripts/check-windows-webview.ps1 -Executable src-tauri/target/release/Vessel.exe
+      - name: Build production Windows installer
+        run: npm run tauri -- build --bundles nsis
+      - name: Verify install, bundled runtimes, application launch, and uninstall
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          ./scripts/test-windows-installer.ps1 -Installer $installer.FullName
+      - name: Prepare release assets
+        run: node scripts/package-windows.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vessel-windows-x64
+          path: .cache/releases/*/*
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7

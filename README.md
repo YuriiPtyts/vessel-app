@@ -1,10 +1,10 @@
 # Vessel
 
-A macOS-first, lightweight YouTube Music desktop client. Private, proprietary project; all rights reserved. Vessel is the working name inherited from this workspace.
+A lightweight YouTube Music desktop client for macOS and Windows. Private, proprietary project; all rights reserved. Vessel is the working name inherited from this workspace.
 
 ## Status
 
-Search-first music app on Apple Silicon macOS, using Tauri 2, Rust, and Svelte 5:
+Search-first music app on Apple Silicon macOS and Windows x64, using Tauri 2, Rust, and Svelte 5:
 
 - Search YouTube Music by song or artist name, with Songs/Music videos filters and paginated results.
 - Click a song or discovery card to play directly; resolution and format discovery happen behind the interface.
@@ -14,8 +14,8 @@ Search-first music app on Apple Silicon macOS, using Tauri 2, Rust, and Svelte 5
 - Change quality while preserving position and pause state.
 - Cancel in-flight resolution; receive actionable provider/stream failures without exposing signed URLs.
 - Keep listening with YouTube Music radio, native automatic next-song playback, one-track source prefetch, and an editable saved queue.
-- Open an optional private Google sign-in window; verified sessions are managed in Rust and stored in macOS Keychain.
-- Use macOS media previous/next and play/pause keys through native Now Playing commands, including while the window is in the background.
+- Open an optional private Google sign-in window; verified sessions are managed in Rust and protected with macOS Keychain or Windows DPAPI.
+- Use native media previous/next and play/pause controls through macOS Now Playing or Windows System Media Transport Controls.
 
 The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Full album/artist browsers and automatic stream recovery remain pending. Likes/history and the queue are local to this Mac. Radio is live-verified as a guest; the Google window/isolation/cancellation are native-verified, but a real account's login, personalized feed, and account-required playback still need owner verification. Google may decline embedded sign-in. Recorded tracks only; lossless requires a verified source.
 
@@ -37,13 +37,13 @@ The **Duskfox** palette, derived from the owner's Zed theme, remains the default
 
 ## Beta build
 
-The current Apple Silicon development beta is **0.1.0-beta.2**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). Download packaging verifies the complete app and nested code signatures after unzipping and mounting the DMG. The development build is ad-hoc signed; warning-free downloads require Developer ID signing and Apple notarization. See [macOS distribution](docs/macos-distribution.md). Native render/queue tests cover the delayed gain regression; physical AirPods/headphone recovery still needs owner confirmation.
+The current development beta is **0.1.0-beta.3**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
 
 To inspect resource use in Neohtop or Activity Monitor, launch the installed app and search for **`Vessel`**. Older builds and direct Cargo development runs use **`vessel-app`**. WebKit WebContent, networking, and GPU helpers can appear separately; the main process alone is not the app's whole resource footprint.
 
 ## Development
 
-Requires Node.js, Rust, Apple's developer tools, and Python 3.14 for the first frozen-extractor build on macOS. Set `VESSEL_BUILD_PYTHON` if that interpreter is not `python3`. These are development requirements; end users do not need Python or other tools installed.
+macOS builds require Node.js, Rust, Apple's developer tools, and Python 3.14 for the first frozen-extractor build. Set `VESSEL_BUILD_PYTHON` if that interpreter is not `python3`. Windows builds require x64 Node.js, Rust/MSVC, and the Windows SDK. These are development requirements; end users do not need Python or playback tools installed.
 
 ```sh
 npm ci
@@ -62,6 +62,8 @@ open src-tauri/target/release/bundle/macos/Vessel.app
 Create a verified development ZIP and drag-and-drop DMG with `npm run package:macos`. Open the DMG and drag **Vessel** onto its **Applications** shortcut. For downloads intended to pass Gatekeeper, configure the Developer ID/Keychain credentials documented in [macOS distribution](docs/macos-distribution.md) and use `npm run release:macos`. Upload the packager's downloads and sidecars; do not ZIP the raw Tauri bundle directly.
 
 If macOS blocks the beta's first launch, try opening Vessel once, then go to **System Settings → Privacy & Security → Security → Open Anyway** and confirm **Open**. See the [first-launch instructions](docs/beta-release.md#first-launch-if-macos-blocks-vessel).
+
+On Windows, use `npm run package:windows` to create the x64 setup executable. The installer handles WebView2 and includes libmpv, yt-dlp, and Deno. [Windows build and verification details](docs/windows-build.md) describe the native CI and installed-runtime checks.
 
 Browser-only visual preview (search/playback require the desktop app):
 
@@ -98,7 +100,7 @@ npm run test:ui
 
 ## Product direction
 
-- macOS first; Windows and Linux later.
+- Apple Silicon macOS and Windows x64; Linux remains a future target.
 - Guest listening is a core requirement. Account support is an early priority, not a prerequisite for listening.
 - Audio-only libmpv playback, validated for the first guest slice; broader reliability, account behavior, and distribution remain release gates.
 - User-selectable quality based on formats actually available to the current source and account.

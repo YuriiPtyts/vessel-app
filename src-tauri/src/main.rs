@@ -2,8 +2,13 @@
 
 #[cfg(target_os = "macos")]
 mod media_controls;
+#[cfg(target_os = "windows")]
+#[path = "media_controls_windows.rs"]
+mod media_controls;
 #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
 mod native_diagnostics;
+#[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
+mod windows_diagnostics;
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -22,6 +27,8 @@ use vessel_app::{
 };
 
 type AppState<'a> = tauri::State<'a, Arc<Application>>;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+type MediaDispatch = Arc<dyn Fn(media_controls::Action) + Send + Sync>;
 
 fn trusted_caller(label: &str, url: &url::Url) -> bool {
     label == "main"
@@ -46,6 +53,23 @@ fn vessel_diagnostic_error() -> vessel_app::error::AppError {
         "Native diagnostics are not enabled for this run.",
         false,
     )
+}
+
+#[tauri::command]
+fn windows_smoke_probe(
+    window: tauri::WebviewWindow,
+    state: AppState<'_>,
+    probe: serde_json::Value,
+) -> Result<()> {
+    #[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
+    {
+        windows_diagnostics::report(window, &state, probe)
+    }
+    #[cfg(not(all(target_os = "windows", feature = "native-diagnostics")))]
+    {
+        let _ = (window, state, probe);
+        Err(vessel_diagnostic_error())
+    }
 }
 
 #[tauri::command]
@@ -280,7 +304,7 @@ fn main() {
         } else {
             app.path().resource_dir()?.join("runtime")
         };
-        #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+        #[cfg(feature = "native-diagnostics")]
         let root = std::env::var_os("VESSEL_RUNTIME_DIR")
             .map(std::path::PathBuf::from)
             .unwrap_or(root);
@@ -292,7 +316,9 @@ fn main() {
             && std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS").is_some();
         let media_probe = cfg!(all(target_os = "macos", feature = "native-diagnostics"))
             && std::env::var_os("VESSEL_MEDIA_DIAGNOSTICS").is_some();
-        let isolated_services = remember_probe || sign_in_probe || media_probe;
+        let windows_smoke = cfg!(all(target_os = "windows", feature = "native-diagnostics"))
+            && std::env::var_os("VESSEL_WINDOWS_SMOKE_REPORT").is_some();
+        let isolated_services = remember_probe || sign_in_probe || media_probe || windows_smoke;
         let library = Arc::new(if isolated_services {
             LocalLibrary::memory()
         } else {
@@ -300,7 +326,7 @@ fn main() {
         });
         app.manage(Arc::new(SignIn::default()));
         let emit = move |event| {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             if let AppEvent::Playback(snapshot) = &event {
                 let snapshot = snapshot.clone();
                 let _ = handle.run_on_main_thread(move || media_controls::update(&snapshot));
@@ -324,10 +350,10 @@ fn main() {
                 emit,
             )?
         });
-        #[cfg(target_os = "macos")]
-        if !isolated_services {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        if !isolated_services || windows_smoke {
             let application = Arc::downgrade(&app.state::<Arc<Application>>());
-            media_controls::install(Arc::new(move |action| {
+            let dispatch: MediaDispatch = Arc::new(move |action| {
                 if let Some(application) = application.upgrade() {
                     tauri::async_runtime::spawn(async move {
                         use media_controls::Action;
@@ -344,6 +370,7 @@ fn main() {
                             Action::Pause => {
                                 let _ = application.pause(true).await;
                             }
+                            #[cfg(target_os = "macos")]
                             Action::Toggle => {
                                 if let Ok(snapshot) = application.snapshot() {
                                     let _ = application
@@ -357,7 +384,15 @@ fn main() {
                         }
                     });
                 }
-            }));
+            });
+            #[cfg(target_os = "macos")]
+            media_controls::install(dispatch);
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                if media_controls::install(window.hwnd()?, dispatch).is_err() {
+                    eprintln!("Windows media controls are unavailable on this system.");
+                }
+            }
         }
         #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
         if let Some(destination) = std::env::var_os("VESSEL_MEDIA_DIAGNOSTICS") {
@@ -379,6 +414,15 @@ fn main() {
         }
         Ok(())
     });
+    #[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
+    let builder = builder.on_page_load(|webview, payload| {
+        if webview.label() == "main"
+            && std::env::var_os("VESSEL_WINDOWS_SMOKE_REPORT").is_some()
+            && payload.event() == tauri::webview::PageLoadEvent::Finished
+        {
+            let _ = webview.eval(windows_diagnostics::PROBE_SCRIPT);
+        }
+    });
     #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
     let builder = builder.on_page_load(|webview, payload| {
         if webview.label() == "main"
@@ -392,6 +436,7 @@ fn main() {
         .invoke_handler({
             let commands: fn(tauri::ipc::Invoke) -> bool = tauri::generate_handler![
                 native_material_probe,
+                windows_smoke_probe,
                 runtime_report,
                 search_music,
                 home_feed,
@@ -443,7 +488,7 @@ fn main() {
         .expect("could not start the Vessel native shell");
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             media_controls::shutdown();
             handle.state::<Arc<SignIn>>().shutdown(handle, &handle.state::<Arc<Application>>());
             handle.state::<Arc<Application>>().shutdown();

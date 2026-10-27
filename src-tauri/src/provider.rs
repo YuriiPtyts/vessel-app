@@ -402,6 +402,8 @@ async fn resolve_profile(
         .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW: no flashing resolver console.
 
     let mut child = command.spawn().map_err(|_| {
         AppError::new(
@@ -410,6 +412,9 @@ async fn resolve_profile(
             false,
         )
     })?;
+    #[cfg(windows)]
+    let group = windows_job::ChildJob::attach(child.id())?;
+    #[cfg(not(windows))]
     let group = ProcessGroup(child.id());
     let stdout = child.stdout.take().ok_or_else(AppError::internal)?;
     let stderr = child.stderr.take().ok_or_else(AppError::internal)?;
@@ -488,8 +493,12 @@ fn availability_delay(ready: f64, now: f64) -> Result<Duration> {
 }
 
 // Cancellation/timeouts terminate yt-dlp and its transient JavaScript runtime together.
+#[cfg(windows)]
+mod windows_job;
+#[cfg(not(windows))]
 struct ProcessGroup(Option<u32>);
 
+#[cfg(not(windows))]
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         #[cfg(unix)]

@@ -10,6 +10,11 @@ import { buildExtractor } from './build-extractor.mjs';
 import { buildMpv } from './build-mpv.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+if (process.platform === 'win32') {
+  const { prepareWindows } = await import('./prepare-windows.mjs');
+  await prepareWindows();
+  process.exit(0);
+}
 const manifest = JSON.parse(await readFile(join(root, 'native-dependencies.json'), 'utf8'));
 
 if (`${process.platform}-${process.arch}` !== manifest.platform) {
