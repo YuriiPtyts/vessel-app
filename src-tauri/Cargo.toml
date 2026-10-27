@@ -1,6 +1,6 @@
 [package]
 name = "vessel-app"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 description = "A lightweight, search-first desktop music client"
 edition = "2024"
 rust-version = "1.90"
@@ -30,7 +30,7 @@ url = "2"
 security-framework = "3.7"
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSProcessInfo"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSProcessInfo", "NSString"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWindow", "NSView", "NSColor", "NSGlassEffectView", "NSVisualEffectView"], optional = true }
 
 [profile.release]

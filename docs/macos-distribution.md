@@ -16,8 +16,8 @@ The packager now stages outside the workspace, copies the prepared runtime with 
 
 ```sh
 npm run package:macos
-npm run verify:macos -- .cache/releases/v0.1.0-beta.1/Vessel-0.1.0-beta.1-macos-arm64.zip
-npm run verify:macos -- .cache/releases/v0.1.0-beta.1/Vessel-0.1.0-beta.1-macos-arm64.dmg
+npm run verify:macos -- .cache/releases/v0.1.0-beta.2/Vessel-0.1.0-beta.2-macos-arm64.zip
+npm run verify:macos -- .cache/releases/v0.1.0-beta.2/Vessel-0.1.0-beta.2-macos-arm64.dmg
 ```
 
 The versioned output directory contains the ZIP, DMG, `SHA256SUMS` covering both downloads, and `SIGNING.json`. To install from the DMG, drag Vessel onto Applications, eject the image, and launch from Applications. This mode makes valid **ad-hoc app signatures**, not an Apple-trusted release; its DMG container is unsigned. The signing report records actual Gatekeeper acceptance and the DMG mount checks; integrity checks alone are not a claim of warning-free launch. There is no quarantine-removal command or system security-policy change in the packaging process.
@@ -32,8 +32,8 @@ Then configure the packaging process:
 export VESSEL_SIGNING_IDENTITY='Developer ID Application: Your Organization (TEAMID)'
 export VESSEL_NOTARY_PROFILE=vessel-notary
 npm run release:macos
-npm run verify:macos -- .cache/releases/v0.1.0-beta.1/Vessel-0.1.0-beta.1-macos-arm64.zip --distribution
-npm run verify:macos -- .cache/releases/v0.1.0-beta.1/Vessel-0.1.0-beta.1-macos-arm64.dmg --distribution
+npm run verify:macos -- .cache/releases/v0.1.0-beta.2/Vessel-0.1.0-beta.2-macos-arm64.zip --distribution
+npm run verify:macos -- .cache/releases/v0.1.0-beta.2/Vessel-0.1.0-beta.2-macos-arm64.dmg --distribution
 ```
 
 The distribution mode signs all bundled code with hardened runtime, retains runtime-specific entitlements (including Deno's existing JIT entitlements), submits to Apple, requires an Accepted response, staples the ticket, rebuilds the ZIP, and requires both staple validation and Gatekeeper acceptance after extraction. It also signs, notarizes, and staples the completed DMG, then validates the image and its mounted app. It fails rather than falling back to ad-hoc signing when credentials or Apple acceptance are missing.

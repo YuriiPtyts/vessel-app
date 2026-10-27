@@ -407,7 +407,7 @@ fn apply_volume(
     volume: f64,
 ) -> Result<()> {
     if let Some(engine) = engine {
-        engine.set("volume", &volume.to_string())?;
+        engine.set_volume(volume)?;
     }
     if volume > 0.0 {
         *last_audible_volume = volume;
@@ -496,6 +496,72 @@ mod tests {
         player.volume(0.0).await.unwrap();
         assert_eq!(player.toggle_mute().await.unwrap().volume, 73.0);
         player.shutdown();
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires the output-silencing CoreAudio render audit; run scripts/check-native-volume.mjs"]
+    async fn native_output_gain_follows_volume_without_queued_audio_delay() {
+        let audit = crate::test_audio::RenderAudit::new();
+        let player = Player::new(crate::test_audio::paths(), Arc::new(|_| {}));
+        let audio = crate::test_audio::render_probe_tone();
+        let (track, mut format, source) = crate::test_audio::selection(&audio);
+        format.sample_rate_hz = Some(44_100);
+        format.channels = Some(2);
+        let (_cancel, receiver) = watch::channel(0);
+        // Stay at zero until the audit has actually wrapped the native render callback.
+        player.volume(0.0).await.unwrap();
+        player
+            .load(track, format, source, receiver, 0)
+            .await
+            .unwrap();
+        let start = Instant::now();
+        while audit.blocks() < 5 {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "Native render audit did not attach; refusing to unmute the fixture"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        player.volume(100.0).await.unwrap();
+        let start = Instant::now();
+        while audit.peak() < 0.1 {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "No rendered tone after unmuting"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        let mut timings = Vec::new();
+        for volume in [0.0, 100.0, 0.0, 100.0] {
+            let start = Instant::now();
+            player.volume(volume).await.unwrap();
+            loop {
+                let observed = audit.peak();
+                if (volume == 0.0 && observed == 0.0) || (volume > 0.0 && observed > 0.1) {
+                    break;
+                }
+                assert!(
+                    start.elapsed() < Duration::from_secs(3),
+                    "Rendered gain did not settle: {observed}"
+                );
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            println!("Rendered volume {volume}: {:?}", start.elapsed());
+            timings.push(start.elapsed());
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+        println!(
+            "Native render/queue quantum: {} frames; backend {}",
+            audit.frames(),
+            std::env::var("VESSEL_VOLUME_PROBE_BACKEND").unwrap_or_else(|_| "default".into())
+        );
+        player.stop().await.unwrap();
+        player.shutdown();
+        assert!(
+            timings.iter().all(|time| *time < Duration::from_millis(50)),
+            "Gain changes are delayed by queued audio: {timings:?}"
+        );
     }
 
     #[tokio::test]

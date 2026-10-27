@@ -10,7 +10,11 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const patchNames = ['mpvkit-library-build.patch', 'mpv-coreaudio-cleanup.patch'];
+const patchNames = [
+  'mpvkit-library-build.patch',
+  'mpv-coreaudio-cleanup.patch',
+  'mpv-output-gain.patch',
+];
 
 async function hash(path) {
   const digest = createHash('sha256');
@@ -109,6 +113,7 @@ export async function buildMpv(dependency, archive, destination, cache) {
       }
     }
     patch(join(dist, 'libmpv-v0.41.0'), join(root, 'native/patches/mpv-coreaudio-cleanup.patch'));
+    patch(join(dist, 'libmpv-v0.41.0'), join(root, 'native/patches/mpv-output-gain.patch'));
     for (const input of recipe.archives) {
       const directory = join(dist, `${input.library}-${input.version}`);
       await mkdir(directory, { recursive: true });
@@ -128,7 +133,9 @@ export async function buildMpv(dependency, archive, destination, cache) {
       PATH: `${join(tools, 'bin')}:${process.env.PATH}`,
       GIT_CEILING_DIRECTORIES: work,
     };
-    console.log('Building the pinned LGPL audio engine with CoreAudio initialization cleanup…');
+    console.log(
+      'Building the pinned LGPL audio engine with CoreAudio cleanup and live output gain…',
+    );
     execFileSync('/usr/bin/make', ['build', 'platform=macos'], {
       cwd: source,
       env,
@@ -243,6 +250,7 @@ export async function buildMpv(dependency, archive, destination, cache) {
       recipe: recipeHash,
       sha256: await hash(output),
       fix: 'mpv c5d391adba7bd024954d0df1e0405f5749f4d4ca (v0.41.0 backport)',
+      outputGain: 'Per-handle native output gain restored before each AO starts streaming',
       inputs: recipe,
     };
     await writeFile(stampPath, JSON.stringify(stamp, null, 2));

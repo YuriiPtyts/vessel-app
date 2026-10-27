@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+mod media_controls;
 #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
 mod native_diagnostics;
 
@@ -288,7 +290,9 @@ fn main() {
             && std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS").is_some();
         let sign_in_probe = cfg!(all(target_os = "macos", feature = "native-diagnostics"))
             && std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS").is_some();
-        let isolated_services = remember_probe || sign_in_probe;
+        let media_probe = cfg!(all(target_os = "macos", feature = "native-diagnostics"))
+            && std::env::var_os("VESSEL_MEDIA_DIAGNOSTICS").is_some();
+        let isolated_services = remember_probe || sign_in_probe || media_probe;
         let library = Arc::new(if isolated_services {
             LocalLibrary::memory()
         } else {
@@ -296,6 +300,11 @@ fn main() {
         });
         app.manage(Arc::new(SignIn::default()));
         let emit = move |event| {
+            #[cfg(target_os = "macos")]
+            if let AppEvent::Playback(snapshot) = &event {
+                let snapshot = snapshot.clone();
+                let _ = handle.run_on_main_thread(move || media_controls::update(&snapshot));
+            }
             let _ = match event {
                 AppEvent::Playback(snapshot) => handle.emit_to("main", "playback-state", snapshot),
                 AppEvent::Queue(snapshot) => handle.emit_to("main", "queue-state", snapshot),
@@ -315,6 +324,45 @@ fn main() {
                 emit,
             )?
         });
+        #[cfg(target_os = "macos")]
+        if !isolated_services {
+            let application = Arc::downgrade(&app.state::<Arc<Application>>());
+            media_controls::install(Arc::new(move |action| {
+                if let Some(application) = application.upgrade() {
+                    tauri::async_runtime::spawn(async move {
+                        use media_controls::Action;
+                        match action {
+                            Action::Next => {
+                                let _ = application.next().await;
+                            }
+                            Action::Previous => {
+                                let _ = application.previous().await;
+                            }
+                            Action::Play => {
+                                let _ = application.pause(false).await;
+                            }
+                            Action::Pause => {
+                                let _ = application.pause(true).await;
+                            }
+                            Action::Toggle => {
+                                if let Ok(snapshot) = application.snapshot() {
+                                    let _ = application
+                                        .pause(
+                                            snapshot.status
+                                                != vessel_app::playback::PlaybackStatus::Paused,
+                                        )
+                                        .await;
+                                }
+                            }
+                        }
+                    });
+                }
+            }));
+        }
+        #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+        if let Some(destination) = std::env::var_os("VESSEL_MEDIA_DIAGNOSTICS") {
+            media_controls::diagnose(std::path::Path::new(&destination))?;
+        }
         if !isolated_services {
             let warm_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -395,6 +443,8 @@ fn main() {
         .expect("could not start the Vessel native shell");
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            #[cfg(target_os = "macos")]
+            media_controls::shutdown();
             handle.state::<Arc<SignIn>>().shutdown(handle, &handle.state::<Arc<Application>>());
             handle.state::<Arc<Application>>().shutdown();
         } else if matches!(event, tauri::RunEvent::WindowEvent { ref label, event: tauri::WindowEvent::Destroyed, .. } if label == "main") {

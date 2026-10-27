@@ -56,7 +56,7 @@ With reduced transparency disabled, build the opt-in developer feature:
 
 ```sh
 npm run tauri -- build --no-bundle --features native-diagnostics
-VESSEL_NATIVE_DIAGNOSTICS="$TMPDIR/vessel-material.json" VESSEL_NATIVE_DIAGNOSTICS_EXIT=1 VESSEL_RUNTIME_DIR="$PWD/src-tauri/runtime" src-tauri/target/release/vessel-app -ApplePersistenceIgnoreState YES -NSQuitAlwaysKeepsWindows NO
+VESSEL_NATIVE_DIAGNOSTICS="$TMPDIR/vessel-material.json" VESSEL_NATIVE_DIAGNOSTICS_EXIT=1 VESSEL_RUNTIME_DIR="$PWD/src-tauri/runtime" src-tauri/target/release/Vessel -ApplePersistenceIgnoreState YES -NSQuitAlwaysKeepsWindows NO
 node scripts/check-native-material.mjs "$TMPDIR/vessel-material.json"
 ```
 

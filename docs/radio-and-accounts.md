@@ -35,7 +35,7 @@ Google can reject embedded sign-in. A rejection is surfaced as an unavailable ac
 
 ```sh
 npm run tauri -- build --no-bundle --features native-diagnostics
-VESSEL_SIGN_IN_DIAGNOSTICS="$TMPDIR/vessel-sign-in.json" VESSEL_RUNTIME_DIR="$PWD/src-tauri/runtime" src-tauri/target/release/vessel-app -ApplePersistenceIgnoreState YES -NSQuitAlwaysKeepsWindows NO
+VESSEL_SIGN_IN_DIAGNOSTICS="$TMPDIR/vessel-sign-in.json" VESSEL_RUNTIME_DIR="$PWD/src-tauri/runtime" src-tauri/target/release/Vessel -ApplePersistenceIgnoreState YES -NSQuitAlwaysKeepsWindows NO
 node scripts/check-native-sign-in.mjs "$TMPDIR/vessel-sign-in.json"
 ```
 
@@ -51,7 +51,7 @@ The opt-in diagnostic opens and cancels the real Google window without entering 
 
 ```sh
 npm run tauri -- build --debug --bundles app --features native-diagnostics
-node scripts/check-native-remember.mjs src-tauri/target/debug/bundle/macos/Vessel.app/Contents/MacOS/vessel-app
+node scripts/check-native-remember.mjs src-tauri/target/debug/bundle/macos/Vessel.app/Contents/MacOS/Vessel
 ```
 
 ### Owner account verification

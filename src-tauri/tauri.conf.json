@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Vessel",
-  "version": "0.1.0-beta.1",
+  "mainBinaryName": "Vessel",
+  "version": "0.1.0-beta.2",
   "identifier": "app.vessel.desktop",
   "build": {
     "beforeDevCommand": "npm run prepare:native && npm run dev",

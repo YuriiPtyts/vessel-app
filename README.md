@@ -15,8 +15,9 @@ Search-first music app on Apple Silicon macOS, using Tauri 2, Rust, and Svelte 5
 - Cancel in-flight resolution; receive actionable provider/stream failures without exposing signed URLs.
 - Keep listening with YouTube Music radio, native automatic next-song playback, one-track source prefetch, and an editable saved queue.
 - Open an optional private Google sign-in window; verified sessions are managed in Rust and stored in macOS Keychain.
+- Use macOS media previous/next and play/pause keys through native Now Playing commands, including while the window is in the background.
 
-The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Full album/artist browsers, automatic stream recovery, and OS media controls remain pending. Likes/history and the queue are local to this Mac. Radio is live-verified as a guest; the Google window/isolation/cancellation are native-verified, but a real account's login, personalized feed, and account-required playback still need owner verification. Google may decline embedded sign-in. Recorded tracks only; lossless requires a verified source.
+The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Full album/artist browsers and automatic stream recovery remain pending. Likes/history and the queue are local to this Mac. Radio is live-verified as a guest; the Google window/isolation/cancellation are native-verified, but a real account's login, personalized feed, and account-required playback still need owner verification. Google may decline embedded sign-in. Recorded tracks only; lossless requires a verified source.
 
 ## Listening
 
@@ -26,7 +27,9 @@ Open **Up next** using the player's queue icon to choose/remove songs, clear the
 
 Use the top-right avatar or sidebar session label for **Account**. **Connect Google** opens Google's own page in an isolated native window. Remembered sign-in data is restored from macOS Keychain and must be verified before authenticated requests resume. Closing/cancelling the window leaves guest listening available. Sign-out removes Vessel's saved Keychain session and isolated browser data, and stops playback while retaining local likes, history, queue, and appearance. See [radio and account behavior, verification, and remaining account QA](docs/radio-and-accounts.md).
 
-Volume updates live while dragging, with bounded/coalesced native writes. Click the player's cover for a larger now-playing picture; on wide windows the artwork panel is shown by default. The app uses provider artwork and falls back to the original thumbnail when a higher-resolution image is unavailable.
+Volume updates live while dragging, with bounded/coalesced native writes to the per-player output gain. This changes already-queued audio instead of baking gain into future PCM, retaining the previous loudness curve and mute restoration. Click the player's cover for a larger now-playing picture; on wide windows the artwork panel is shown by default. The app uses provider artwork and falls back to the original thumbnail when a higher-resolution image is unavailable.
+
+See [the output-stage volume regression and measurements](docs/volume-response.md). Keyboard media previous/next and play/pause use the same Rust queue/transport as the player buttons. On keyboards configured to send F-keys, use the media/Fn mode.
 
 ## Appearance
 
@@ -34,7 +37,9 @@ The **Duskfox** palette, derived from the owner's Zed theme, remains the default
 
 ## Beta build
 
-The first Apple Silicon development beta is **0.1.0-beta.1**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). Download packaging now verifies the complete app and nested code signatures after unzipping. The development build is ad-hoc signed; warning-free downloads require Developer ID signing and Apple notarization. See [macOS distribution](docs/macos-distribution.md). Automated command timings alone do not establish audible volume response or physical AirPods/headphone recovery.
+The current Apple Silicon development beta is **0.1.0-beta.2**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). Download packaging verifies the complete app and nested code signatures after unzipping and mounting the DMG. The development build is ad-hoc signed; warning-free downloads require Developer ID signing and Apple notarization. See [macOS distribution](docs/macos-distribution.md). Native render/queue tests cover the delayed gain regression; physical AirPods/headphone recovery still needs owner confirmation.
+
+To inspect resource use in Neohtop or Activity Monitor, launch the installed app and search for **`Vessel`**. Older builds and direct Cargo development runs use **`vessel-app`**. WebKit WebContent, networking, and GPU helpers can appear separately; the main process alone is not the app's whole resource footprint.
 
 ## Development
 

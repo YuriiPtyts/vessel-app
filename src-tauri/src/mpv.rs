@@ -136,6 +136,7 @@ impl Mpv {
             ("input-default-bindings", "no"),
             ("input-vo-keyboard", "no"),
             ("osc", "no"),
+            ("volume", "100"),
             ("cache", "yes"),
             ("demuxer-max-bytes", "16777216"),
             ("demuxer-max-back-bytes", "8388608"),
@@ -146,6 +147,14 @@ impl Mpv {
             let name = cstring(name)?;
             let value = cstring(value)?;
             // SAFETY: the live handle and C strings are valid for this synchronous call.
+            check(unsafe { set_option(engine.handle.as_ptr(), name.as_ptr(), value.as_ptr()) })?;
+        }
+        #[cfg(test)]
+        if let Ok(backend) = std::env::var("VESSEL_VOLUME_PROBE_BACKEND") {
+            assert!(matches!(backend.as_str(), "coreaudio" | "avfoundation"));
+            let name = cstring("ao")?;
+            let value = cstring(&backend)?;
+            // SAFETY: fixture-only backend selection before native initialization.
             check(unsafe { set_option(engine.handle.as_ptr(), name.as_ptr(), value.as_ptr()) })?;
         }
         // SAFETY: options were set on the newly created handle, on its owning thread.
@@ -174,8 +183,15 @@ impl Mpv {
         self.set("http-header-fields", &headers)?;
         self.set("start", &position.max(0.0).to_string())?;
         self.set("pause", if paused { "yes" } else { "no" })?;
-        self.set("volume", &volume.to_string())?;
+        self.set_volume(volume)?;
         self.run(&["loadfile", &source.url, "replace"])
+    }
+
+    pub fn set_volume(&self, volume: f64) -> Result<()> {
+        // Keep the established perceptual curve, but apply it after queued PCM,
+        // in the per-player AudioUnit/AVSampleBufferAudioRenderer output gain.
+        let gain = (volume / 100.0).powi(3) * 100.0;
+        self.set("vessel-output-volume", &gain.to_string())
     }
 
     pub fn set(&self, name: &str, value: &str) -> Result<()> {
@@ -429,7 +445,44 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "loads bundled libmpv and reads actual native volume; no audio is played"]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires the output-silencing render audit; run scripts/check-native-volume.mjs"]
+    fn native_output_gain_is_restored_before_recreated_output_starts() {
+        use std::time::{Duration, Instant};
+        let audit = crate::test_audio::RenderAudit::new();
+        let engine = Mpv::open(&crate::test_audio::paths()).unwrap();
+        let audio = crate::test_audio::render_probe_tone();
+        let (track, _, source) = crate::test_audio::selection(&audio);
+        engine.load(&source, 0.0, false, 0.0).unwrap();
+        for volume in [0.0_f64, 27.0, 73.0, 0.0] {
+            engine.set_volume(volume).unwrap();
+            let previous = audit.generations();
+            let previous_blocks = audit.blocks();
+            engine.run(&["ao-reload"]).unwrap();
+            let start = Instant::now();
+            while audit.generations() <= previous || audit.blocks() <= previous_blocks + 5 {
+                assert!(
+                    start.elapsed() < Duration::from_secs(5),
+                    "Output was not recreated for {}",
+                    track.title
+                );
+                assert!(!engine.events().failed);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            let gain = (volume / 100.0).powi(3);
+            assert!(
+                (audit.first_gain() - gain).abs() < 0.0001,
+                "New output started with the wrong gain: {} vs {gain}",
+                audit.first_gain()
+            );
+            assert!((engine.number("ao-volume").unwrap() / 100.0 - gain).abs() < 0.0001);
+            assert_eq!(engine.number("volume"), Some(100.0));
+        }
+        engine.run(&["stop"]).unwrap();
+    }
+
+    #[test]
+    #[ignore = "loads bundled libmpv and checks the retained output target and curve; no audio is played"]
     fn native_volume_values_are_applied_immediately() {
         let root = std::env::var_os("VESSEL_RUNTIME_DIR")
             .map(std::path::PathBuf::from)
@@ -437,9 +490,11 @@ mod tests {
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime")
             });
         let engine = Mpv::open(&RuntimePaths::new(root)).unwrap();
-        for volume in [0.0, 27.0, 64.0, 100.0, 0.0] {
-            engine.set("volume", &volume.to_string()).unwrap();
-            assert!((engine.number("volume").unwrap() - volume).abs() < 0.01);
+        for volume in [0.0_f64, 27.0, 64.0, 100.0, 0.0] {
+            engine.set_volume(volume).unwrap();
+            let expected = (volume / 100.0).powi(3) * 100.0;
+            assert!((engine.number("vessel-output-volume").unwrap() - expected).abs() < 0.0001);
+            assert_eq!(engine.number("volume"), Some(100.0));
         }
     }
 }

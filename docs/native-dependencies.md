@@ -2,10 +2,11 @@
 
 Pinned, checksum-verified artifacts/source are bundled in the app. Preparation runs on the developer/build machine only. End users do not install tools. Native binaries, source archives, build virtual environments, and caches are ignored by Git.
 
-## libmpv 0.41.0-vessel.1 (CoreAudio cleanup backport)
+## libmpv 0.41.0-vessel.2 (CoreAudio cleanup and live output gain)
 
 - Preparation now builds the arm64 engine from the exact MPVKit/mpv/FFmpeg source snapshots and static dependency archives pinned in `native/mpv-build.json`. Every downloaded input, including the private build environment's Meson wheel, is SHA-256 checked before use.
 - `native/patches/mpv-coreaudio-cleanup.patch` backports upstream mpv commit `c5d391adba7bd024954d0df1e0405f5749f4d4ca` (PR #18383). Device listeners are registered only after successful AudioUnit initialization; partial initialization is cleaned up. The v0.41.0 helper's disposed AudioUnit pointer is cleared to avoid double disposal during the backported cleanup.
+- `native/patches/mpv-output-gain.patch` adds a per-handle `vessel-output-volume` property. Rust maps the established cubic loudness curve onto CoreAudio's per-AudioUnit gain or AVFoundation's per-renderer volume, leaving software PCM gain at unity. The target can be set before an output exists and is restored before every new output starts, including mute and device/format recreation. No system-wide device volume is changed. This removes the reproduced roughly 1.8-second AVFoundation queue delay.
 - `scripts/build-mpv.mjs` and `native/patches/mpvkit-library-build.patch` keep GPL/nonfree flags off, omit unused SMB/Blu-ray/OpenSSL inputs and CLI players, and link the static dependencies into a replaceable LGPL-3.0-or-later dynamic library. Only system dynamic dependencies are accepted. Runtime replacement is atomic; build provenance is bundled in `runtime/libmpv-build.json`.
 - Developer/build requirements: Xcode, Python 3, pkg-config, Ninja, and CMake. Meson is installed from its pinned wheel into the ignored build cache. The recipe does not install global packages. These tools are **not** needed by end users.
 - Source and compiled caches live in `.cache/native/`; the compiled-file checksum and recipe hash are checked on reuse. The normal macOS bundle contains the resulting engine, without a source build at launch.

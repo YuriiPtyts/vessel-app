@@ -1,4 +1,4 @@
-//! Muted native tests use locally generated silence, without network or audible audio.
+//! Local native fixtures. Tone tests require the output-silencing render audit.
 use crate::{
     provider::{AudioFormat, StreamSource, Track},
     runtime::RuntimePaths,
@@ -35,6 +35,72 @@ pub fn silence_at(rate: u32, channels: u16) -> tempfile::NamedTempFile {
     file.write_all(&header).unwrap();
     file.write_all(&vec![0; bytes as usize]).unwrap();
     file
+}
+
+#[cfg(target_os = "macos")]
+pub fn render_probe_tone() -> tempfile::NamedTempFile {
+    use std::io::{Seek, SeekFrom};
+    let rate = 44_100;
+    let mut file = silence_at(rate, 2);
+    let mut samples = Vec::with_capacity((rate * 30 * 4) as usize);
+    for frame in 0..rate * 30 {
+        let sample = ((f64::from(frame) * 1000.0 * std::f64::consts::TAU / f64::from(rate)).sin()
+            * 4096.0) as i16;
+        samples.extend_from_slice(&sample.to_le_bytes());
+        samples.extend_from_slice(&sample.to_le_bytes());
+    }
+    file.as_file_mut().seek(SeekFrom::Start(44)).unwrap();
+    file.write_all(&samples).unwrap();
+    file
+}
+
+#[cfg(target_os = "macos")]
+pub struct RenderAudit {
+    _library: libloading::Library,
+    peak: unsafe extern "C" fn() -> f64,
+    blocks: unsafe extern "C" fn() -> u64,
+    frames: unsafe extern "C" fn() -> u32,
+    generations: unsafe extern "C" fn() -> u64,
+    first_gain: unsafe extern "C" fn() -> f64,
+}
+
+#[cfg(target_os = "macos")]
+impl RenderAudit {
+    pub fn new() -> Self {
+        let library: libloading::Library = libloading::os::unix::Library::this().into();
+        // SAFETY: only the explicit fixture image exports these atomic observers.
+        // Resolve all symbols before a tone can start; keep the library alive.
+        unsafe {
+            Self {
+                peak: *library.get(b"vessel_volume_render_peak\0").unwrap(),
+                blocks: *library.get(b"vessel_volume_render_blocks\0").unwrap(),
+                frames: *library.get(b"vessel_volume_render_frames\0").unwrap(),
+                generations: *library.get(b"vessel_volume_output_generations\0").unwrap(),
+                first_gain: *library.get(b"vessel_volume_output_first_gain\0").unwrap(),
+                _library: library,
+            }
+        }
+    }
+    pub fn peak(&self) -> f64 {
+        // SAFETY: the fixture's library outlives this atomic observer.
+        unsafe { (self.peak)() }
+    }
+    pub fn blocks(&self) -> u64 {
+        // SAFETY: the fixture's library outlives this atomic observer.
+        unsafe { (self.blocks)() }
+    }
+    pub fn frames(&self) -> u32 {
+        // SAFETY: the fixture's library outlives this atomic observer.
+        unsafe { (self.frames)() }
+    }
+    pub fn generations(&self) -> u64 {
+        // SAFETY: the fixture's library outlives this atomic observer.
+        unsafe { (self.generations)() }
+    }
+    pub fn first_gain(&self) -> f64 {
+        // SAFETY: the fixture's library outlives this atomic observer.
+        unsafe { (self.first_gain)() }
+    }
 }
 pub fn selection(file: &tempfile::NamedTempFile) -> (Track, AudioFormat, StreamSource) {
     (
