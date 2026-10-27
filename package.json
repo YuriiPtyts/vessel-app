@@ -9,6 +9,9 @@
     "prepare:native": "node scripts/prepare-native.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "package:macos": "npm run tauri -- build --bundles app && node scripts/package-macos.mjs",
+    "release:macos": "npm run tauri -- build --bundles app && node scripts/package-macos.mjs --distribution",
+    "verify:macos": "node scripts/check-macos-package.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri"

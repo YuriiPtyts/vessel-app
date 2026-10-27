@@ -1,6 +1,6 @@
 # Vessel 0.1.0-beta.1
 
-Private Apple Silicon macOS beta candidate. This is a prerelease, not a stable release.
+Private Apple Silicon macOS development beta. This is a prerelease, not a stable release.
 
 ## Included changes
 
@@ -11,13 +11,13 @@ Private Apple Silicon macOS beta candidate. This is a prerelease, not a stable r
 
 ## Install the candidate
 
-Download `Vessel-0.1.0-beta.1-macos-arm64.zip` and `SHA256SUMS` from the private draft release. Verify the archive with `shasum -a 256 -c SHA256SUMS`, unzip it, quit any older Vessel instance, and move `Vessel.app` to Applications. The download includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+Download `Vessel-0.1.0-beta.1-macos-arm64.zip`, `SHA256SUMS`, and `SIGNING.json` from the private release. Verify the archive with `shasum -a 256 -c SHA256SUMS`, unzip it, quit any older Vessel instance, and move `Vessel.app` to Applications. The download includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
 
-This build is not Developer-ID signed or notarized. It was tested on Apple Silicon macOS 27; older macOS versions and Intel Macs have not been validated. See [native dependency provenance and distribution limits](native-dependencies.md).
+The repacked download repairs the invalid bundle/framework signatures in the original ZIP and verifies all bundled code after extraction. It is **ad-hoc signed**, not Developer-ID signed or notarized, and Gatekeeper still rejects it as untrusted. Warning-free launch on other Macs requires the credentials and notarization workflow in [macOS distribution](macos-distribution.md). It was tested on Apple Silicon macOS 27; older macOS versions and Intel Macs have not been validated. See [native dependency provenance and distribution limits](native-dependencies.md).
 
-## Publication gate: original physical-audio reports
+## Pending physical-audio checks
 
-Keep the GitHub prerelease **in draft** until the owner confirms both original symptoms against this candidate:
+The owner still needs to confirm both original symptoms against this beta:
 
 1. While playing and while paused, switch between speakers, the reported 3.5 mm headphones, and AirPods; remove/reconnect the devices and confirm there is no crash and playback recovers. The automated initialization audit and aggregate-device stress exercise related code paths but do not certify these physical transitions.
 2. During actual playback, drag volume and use mute/unmute; confirm that the audible gain follows promptly, not just the thumb or native command acknowledgement. Record the output device and any remaining delay.
@@ -28,4 +28,4 @@ If a crash recurs, use `scripts/inspect-crash.mjs` as described in the investiga
 
 Current commands, observed results, and the distinction between mocked UI, real native checks, and live provider checks are recorded in [the verification log](verification.md). Real Google password/2FA acceptance, real-account recovery, authenticated/Premium playback, minimum-OS coverage, and long-session resource behavior retain the documented limitations.
 
-Release assets contain the app archive and its SHA-256 checksum. Source, patch, and dependency provenance are tracked in `native-dependencies.json`, `native/mpv-build.json`, `native/patches/`, and [native dependencies](native-dependencies.md). Keep this repository and its beta private.
+Release assets contain the app archive, its SHA-256 checksum, and a machine-readable signing report. Source, patch, and dependency provenance are tracked in `native-dependencies.json`, `native/mpv-build.json`, `native/patches/`, and [native dependencies](native-dependencies.md). Keep this repository and its beta private.

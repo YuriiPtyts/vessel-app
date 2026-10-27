@@ -34,7 +34,7 @@ The **Duskfox** palette, derived from the owner's Zed theme, remains the default
 
 ## Beta build
 
-The first Apple Silicon beta candidate is **0.1.0-beta.1**. See [beta notes and the remaining physical-audio acceptance checks](docs/beta-release.md). The private GitHub release remains a draft until those checks pass; automated command timings alone do not establish audible volume response or physical AirPods/headphone recovery.
+The first Apple Silicon development beta is **0.1.0-beta.1**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). Download packaging now verifies the complete app and nested code signatures after unzipping. The development build is ad-hoc signed; warning-free downloads require Developer ID signing and Apple notarization. See [macOS distribution](docs/macos-distribution.md). Automated command timings alone do not establish audible volume response or physical AirPods/headphone recovery.
 
 ## Development
 
@@ -53,6 +53,8 @@ Build and open the local app:
 npm run tauri -- build --bundles app
 open src-tauri/target/release/bundle/macos/Vessel.app
 ```
+
+Create a verified development ZIP with `npm run package:macos`. For downloads intended to pass Gatekeeper, configure the Developer ID/Keychain credentials documented in [macOS distribution](docs/macos-distribution.md) and use `npm run release:macos`. Upload the packager's archive and sidecars; do not ZIP the raw Tauri bundle directly.
 
 Browser-only visual preview (search/playback require the desktop app):
 
