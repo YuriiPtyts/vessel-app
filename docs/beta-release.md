@@ -13,6 +13,19 @@ Private Apple Silicon macOS development beta. This is a prerelease, not a stable
 
 Download `Vessel-0.1.0-beta.1-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
 
+### First launch if macOS blocks Vessel
+
+This beta is not notarized, so macOS may require you to approve its first launch:
+
+1. Try opening **Vessel** from **Applications** once, then dismiss the warning.
+2. Open the **Apple menu → System Settings → Privacy & Security**.
+3. Scroll down to **Security**, find the message about Vessel being blocked, and click **Open Anyway** if offered.
+4. Authenticate with Touch ID or your Mac password if requested, then click **Open** in the confirmation dialog.
+
+If the button is not visible, try opening Vessel again and return to Privacy & Security. After approval, you can open Vessel normally from Applications. See [Apple's Open Anyway instructions](https://support.apple.com/en-us/102445#openanyway).
+
+### Other downloads and signing status
+
 The ZIP download remains available. `SHA256SUMS` covers both files; download both alongside it to run `shasum -a 256 -c SHA256SUMS`, or compare the single downloaded file with its matching line. `SIGNING.json` records the package checks and signing status.
 
 The repacked download repairs the invalid bundle/framework signatures in the original ZIP and verifies all bundled code after extraction. It is **ad-hoc signed**, not Developer-ID signed or notarized, and Gatekeeper still rejects it as untrusted. Warning-free launch on other Macs requires the credentials and notarization workflow in [macOS distribution](macos-distribution.md). It was tested on Apple Silicon macOS 27; older macOS versions and Intel Macs have not been validated. See [native dependency provenance and distribution limits](native-dependencies.md).

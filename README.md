@@ -56,6 +56,8 @@ open src-tauri/target/release/bundle/macos/Vessel.app
 
 Create a verified development ZIP and drag-and-drop DMG with `npm run package:macos`. Open the DMG and drag **Vessel** onto its **Applications** shortcut. For downloads intended to pass Gatekeeper, configure the Developer ID/Keychain credentials documented in [macOS distribution](docs/macos-distribution.md) and use `npm run release:macos`. Upload the packager's downloads and sidecars; do not ZIP the raw Tauri bundle directly.
 
+If macOS blocks the beta's first launch, try opening Vessel once, then go to **System Settings → Privacy & Security → Security → Open Anyway** and confirm **Open**. See the [first-launch instructions](docs/beta-release.md#first-launch-if-macos-blocks-vessel).
+
 Browser-only visual preview (search/playback require the desktop app):
 
 ```sh
