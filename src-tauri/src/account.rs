@@ -61,6 +61,8 @@ pub(crate) struct SessionCookie {
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct CookieSession {
     pub cookies: Vec<SessionCookie>,
+    #[serde(default)]
+    google_cookies: Vec<SessionCookie>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,12 +74,45 @@ struct StoredSession {
 
 impl CookieSession {
     pub fn from_cookies(cookies: Vec<SessionCookie>) -> Result<Self> {
+        let (cookies, google_cookies) = Self::retained_browser_cookies(cookies)?
+            .into_iter()
+            .partition(|cookie| {
+                let domain = cookie.domain.trim_start_matches('.');
+                domain == "youtube.com" || domain.ends_with(".youtube.com")
+            });
+        let result = Self {
+            cookies,
+            google_cookies,
+        };
+        if result
+            .cookie_value("SAPISID")
+            .or_else(|| result.cookie_value("__Secure-3PAPISID"))
+            .is_none()
+            || result.cookie_value("LOGIN_INFO").is_none()
+        {
+            return Err(session_error());
+        }
+        Ok(result)
+    }
+
+    pub fn browser_cookies(&self) -> Vec<SessionCookie> {
+        self.cookies
+            .iter()
+            .chain(&self.google_cookies)
+            .cloned()
+            .collect()
+    }
+
+    pub fn retained_browser_cookies(cookies: Vec<SessionCookie>) -> Result<Vec<SessionCookie>> {
         let now = epoch()? as i64;
         let cookies: Vec<_> = cookies
             .into_iter()
             .filter(|cookie| {
                 let domain = cookie.domain.trim_start_matches('.');
-                (domain == "youtube.com" || domain.ends_with(".youtube.com"))
+                (domain == "youtube.com"
+                    || domain.ends_with(".youtube.com")
+                    || domain == "google.com"
+                    || domain.ends_with(".google.com"))
                     && domain.len() <= 253
                     && domain
                         .bytes()
@@ -97,23 +132,14 @@ impl CookieSession {
             })
             .take(100)
             .collect();
-        let result = Self { cookies };
-        if result
-            .cookie_value("SAPISID")
-            .or_else(|| result.cookie_value("__Secure-3PAPISID"))
-            .is_none()
-            || result.cookie_value("LOGIN_INFO").is_none()
-        {
-            return Err(session_error());
-        }
-        if serde_json::to_vec(&result)
+        if serde_json::to_vec(&cookies)
             .map_err(|_| session_error())?
             .len()
             > 64 * 1024
         {
             return Err(session_error());
         }
-        Ok(result)
+        Ok(cookies)
     }
 
     fn cookie_value(&self, name: &str) -> Option<&str> {
@@ -317,6 +343,13 @@ impl Account {
             Some(1)
         })
     }
+    pub fn remember_profile(&self, id: u64, profile: AccountProfile) {
+        self.update(|state| {
+            if self.attempt.load(Ordering::SeqCst) == id && state.0.mode == AccountMode::Checking {
+                state.0.profile = Some(profile);
+            }
+        });
+    }
     pub fn cancel(&self, id: u64) {
         self.update(|state| {
             if self
@@ -365,9 +398,24 @@ impl Account {
             return Err(session_error());
         }
         Ok(Some((
-            CookieSession::from_cookies(saved.session.cookies)?,
+            CookieSession::from_cookies(saved.session.browser_cookies())?,
             saved.profile,
         )))
+    }
+    pub async fn saved_browser_cookies(&self) -> Result<Vec<SessionCookie>> {
+        let _guard = self.mutation.lock().await;
+        let vault = self.vault.clone();
+        let data = tokio::task::spawn_blocking(move || vault.load())
+            .await
+            .map_err(|_| vault_error())??;
+        let Some(data) = data else {
+            return Ok(Vec::new());
+        };
+        let stored: StoredSession = serde_json::from_slice(&data).map_err(|_| session_error())?;
+        if stored.version != 1 {
+            return Err(session_error());
+        }
+        CookieSession::retained_browser_cookies(stored.session.browser_cookies())
     }
     pub async fn activate(
         self: &Arc<Self>,
@@ -601,6 +649,156 @@ mod tests {
             .collect(),
         )
         .unwrap()
+    }
+    #[tokio::test]
+    async fn a_verified_session_survives_restart_until_explicit_sign_out() {
+        let vault = Arc::new(MemoryVault::default());
+        let original = Account::new(vault.clone());
+        let mut remembered = session();
+        remembered.google_cookies.push(SessionCookie {
+            domain: ".google.com".into(),
+            path: "/".into(),
+            name: "SID".into(),
+            value: "browser-only-fixture".into(),
+            secure: true,
+            http_only: true,
+            expires_at: None,
+        });
+        let profile = AccountProfile {
+            name: "Remembered fixture".into(),
+            email: None,
+            picture_url: None,
+        };
+        let id = original.begin(false);
+        original
+            .activate(id, remembered, profile.clone(), true)
+            .await
+            .unwrap();
+        drop(original);
+
+        let restarted = Account::new(vault.clone());
+        let id = restarted.begin_restore().unwrap();
+        let (session, saved_profile) = restarted.saved().await.unwrap().unwrap();
+        restarted.remember_profile(id, saved_profile.clone());
+        assert!(
+            session
+                .browser_cookies()
+                .iter()
+                .any(|cookie| cookie.name == "SID")
+        );
+        assert!(
+            !std::fs::read_to_string(session.cookie_file().unwrap().path())
+                .unwrap()
+                .contains("browser-only-fixture")
+        );
+        let request = session
+            .request_headers(reqwest::Client::new().get("https://music.youtube.com/"))
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(
+            !request.headers()[reqwest::header::COOKIE]
+                .to_str()
+                .unwrap()
+                .contains("browser-only-fixture")
+        );
+        assert_eq!(saved_profile, profile);
+        assert_eq!(restarted.snapshot().profile.as_ref(), Some(&profile));
+        // A saved profile is not sufficient to announce a verified connection.
+        assert_eq!(restarted.snapshot().mode, AccountMode::Checking);
+        assert!(restarted.request_session().1.is_none());
+        restarted
+            .activate(id, session, profile, false)
+            .await
+            .unwrap();
+        assert_eq!(restarted.snapshot().mode, AccountMode::Connected);
+        restarted.sign_out().await.unwrap();
+        drop(restarted);
+        assert!(Account::new(vault).saved().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn browser_reconnect_retains_google_cookies_when_youtube_session_expires() {
+        let vault = Arc::new(MemoryVault::default());
+        let mut stored = session();
+        for cookie in &mut stored.cookies {
+            cookie.expires_at = Some(0);
+        }
+        stored.google_cookies.push(SessionCookie {
+            domain: ".google.com".into(),
+            path: "/".into(),
+            name: "SID".into(),
+            value: "browser-fixture".into(),
+            secure: true,
+            http_only: true,
+            expires_at: None,
+        });
+        vault
+            .save(
+                &serde_json::to_vec(&StoredSession {
+                    version: 1,
+                    session: stored,
+                    profile: AccountProfile {
+                        name: "Fixture".into(),
+                        email: None,
+                        picture_url: None,
+                    },
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let restarted = Account::new(vault);
+        assert!(matches!(restarted.saved().await, Err(error) if error.code == "session_expired"));
+        let cookies = restarted.saved_browser_cookies().await.unwrap();
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies[0].name, "SID");
+        assert_eq!(restarted.snapshot().mode, AccountMode::Guest);
+    }
+
+    #[test]
+    fn previous_vault_records_without_browser_cookies_still_restore() {
+        let mut value = serde_json::to_value(StoredSession {
+            version: 1,
+            session: session(),
+            profile: AccountProfile {
+                name: "Legacy".into(),
+                email: None,
+                picture_url: None,
+            },
+        })
+        .unwrap();
+        value["session"]
+            .as_object_mut()
+            .unwrap()
+            .remove("google_cookies");
+        let stored: StoredSession = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            CookieSession::from_cookies(stored.session.browser_cookies())
+                .unwrap()
+                .cookies
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn remembered_browser_cookies_stay_inside_google_and_youtube_scopes() {
+        let mut cookies = session().browser_cookies();
+        for domain in [".google.com", "google.com.attacker.test", "unrelated.test"] {
+            cookies.push(SessionCookie {
+                domain: domain.into(),
+                path: "/".into(),
+                name: "SID".into(),
+                value: "fixture".into(),
+                secure: true,
+                http_only: true,
+                expires_at: None,
+            });
+        }
+        let retained = CookieSession::from_cookies(cookies).unwrap();
+        assert_eq!(retained.cookies.len(), 2);
+        assert_eq!(retained.browser_cookies().len(), 3);
+        assert_eq!(retained.google_cookies[0].domain, ".google.com");
     }
     #[tokio::test]
     async fn public_state_never_contains_the_session_and_sign_out_removes_the_vault() {

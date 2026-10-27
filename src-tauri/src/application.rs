@@ -679,6 +679,9 @@ impl Application {
     pub fn begin_sign_in(&self) -> u64 {
         self.account.begin(false)
     }
+    pub(crate) async fn saved_browser_cookies(&self) -> Result<Vec<crate::account::SessionCookie>> {
+        self.account.saved_browser_cookies().await
+    }
     pub fn cancel_sign_in(&self, id: u64) {
         self.account.cancel(id);
     }
@@ -717,7 +720,8 @@ impl Application {
             return;
         };
         match self.account.saved().await {
-            Ok(Some((session, _))) => {
+            Ok(Some((session, saved_profile))) => {
+                self.account.remember_profile(id, saved_profile);
                 let result = async {
                     let profile = self.catalog.verify_account(&session).await?;
                     self.account.activate(id, session, profile, false).await

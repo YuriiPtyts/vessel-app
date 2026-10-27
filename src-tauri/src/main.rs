@@ -267,8 +267,7 @@ async fn sign_out(
     state: AppState<'_>,
     sign_in: tauri::State<'_, Arc<SignIn>>,
 ) -> Result<AccountSnapshot> {
-    sign_in.cancel(&handle, &state).await?;
-    state.sign_out().await
+    sign_in.forget(&handle, &state).await
 }
 
 fn main() {
@@ -285,34 +284,50 @@ fn main() {
             .unwrap_or(root);
         let handle = app.handle().clone();
         let data = app.path().app_data_dir()?;
-        let library = Arc::new(LocalLibrary::open(data.join("collection.json")));
-        app.manage(Arc::new(SignIn::default()));
-        app.manage(Application::desktop(
-            RuntimePaths::new(root),
-            library,
-            data.join("queue.json"),
-            move |event| {
-                let _ = match event {
-                    AppEvent::Playback(snapshot) => {
-                        handle.emit_to("main", "playback-state", snapshot)
-                    }
-                    AppEvent::Queue(snapshot) => handle.emit_to("main", "queue-state", snapshot),
-                    AppEvent::Selection(inspection) => {
-                        handle.emit_to("main", "selection-state", inspection)
-                    }
-                    AppEvent::Account(snapshot) => {
-                        handle.emit_to("main", "account-state", snapshot)
-                    }
-                };
-            },
-        )?);
-        let warm_handle = app.handle().clone();
-        tauri::async_runtime::spawn(async move {
-            warm_handle.state::<Arc<Application>>().warm_up().await;
+        let remember_probe = cfg!(all(target_os = "macos", feature = "native-diagnostics"))
+            && std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS").is_some();
+        let sign_in_probe = cfg!(all(target_os = "macos", feature = "native-diagnostics"))
+            && std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS").is_some();
+        let isolated_services = remember_probe || sign_in_probe;
+        let library = Arc::new(if isolated_services {
+            LocalLibrary::memory()
+        } else {
+            LocalLibrary::open(data.join("collection.json"))
         });
+        app.manage(Arc::new(SignIn::default()));
+        let emit = move |event| {
+            let _ = match event {
+                AppEvent::Playback(snapshot) => handle.emit_to("main", "playback-state", snapshot),
+                AppEvent::Queue(snapshot) => handle.emit_to("main", "queue-state", snapshot),
+                AppEvent::Selection(inspection) => {
+                    handle.emit_to("main", "selection-state", inspection)
+                }
+                AppEvent::Account(snapshot) => handle.emit_to("main", "account-state", snapshot),
+            };
+        };
+        app.manage(if isolated_services {
+            Application::with_library(RuntimePaths::new(root), library, emit)?
+        } else {
+            Application::desktop(
+                RuntimePaths::new(root),
+                library,
+                data.join("queue.json"),
+                emit,
+            )?
+        });
+        if !isolated_services {
+            let warm_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                warm_handle.state::<Arc<Application>>().warm_up().await;
+            });
+        }
         #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
         if std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS").is_some() {
             tauri::async_runtime::spawn(native_diagnostics::sign_in_smoke(app.handle().clone()));
+        }
+        #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+        if remember_probe {
+            tauri::async_runtime::spawn(vessel_app::sign_in::remember_smoke(app.handle().clone()));
         }
         Ok(())
     });

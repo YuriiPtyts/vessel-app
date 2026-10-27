@@ -13,11 +13,11 @@
 
 ## Account lifecycle
 
-1. **Connect Google** opens Google's own HTTPS page in an ephemeral native WebView. It has no Vessel command access and can navigate only to the permitted Google/YouTube account origins. Vessel has no password form and does not inject credential-extraction JavaScript.
-2. After the window returns to YouTube Music, Rust reads its cookie store off the main thread and retains only validated YouTube-domain cookies. Anonymous or incomplete cookies are not saved.
+1. **Connect Google** uses an isolated native WebView with its own stable website-data-store identifier on macOS 14+. On older macOS the browser remains ephemeral, preserving isolation from the main window's preferences. It initially opens a blank document, restores any saved browser cookies through Rust, then navigates to Google's own HTTPS page. It has no Vessel command access; subsequent navigation is limited to the permitted Google/YouTube account origins (plus its internal blank document). Vessel has no password form and does not inject credential-extraction JavaScript.
+2. After the window returns to YouTube Music, Rust reads its cookie store off the main thread. Validated YouTube cookies form the provider session; validated Google cookies are retained separately for browser restoration. Anonymous or incomplete sign-ins are not saved. Google-domain browser cookies never enter provider headers or extractor cookie files.
 3. Rust verifies the session against YouTube's account-menu endpoint. A real account header is required before the public state becomes Connected. Only public name/email/artwork and status cross IPC.
-4. A verified session is saved as a generic password in macOS Keychain under service `app.vessel.desktop.google-session`, entry `youtube-music`. Startup re-verifies the stored session. Cancelled vault mutations finish/roll back in a serialized task instead of abandoning an OS write.
-5. Session revisions partition catalog/context/source caches. An expired authenticated request removes its active request context and offers reconnect. Account-backed playback is stopped on expiry. **Sign out / Forget saved session** removes the Keychain entry, cancels session work, closes the private window, and stops playback. Local likes, history, queue, and appearance remain.
+4. A verified session and its scoped browser cookies are saved as a generic password in macOS Keychain under service `app.vessel.desktop.google-session`, entry `youtube-music`. Startup shows the remembered profile while checking, then re-verifies before enabling authenticated requests or announcing Connected. Existing vault records without Google browser cookies still restore. Cancelled vault mutations finish/roll back in a serialized task; browser recovery waits for pending vault mutations too. Remembering does not depend on WebKit flushing its session data before an app crash or exit.
+5. Session revisions partition catalog/context/source caches. An expired authenticated request removes its active request context and offers reconnect. Still-valid saved Google browser cookies can be reused for reconnect even when YouTube cookies have expired. Account-backed playback is stopped on expiry. **Sign out / Forget saved session** removes the complete Keychain entry, cancels session work, closes the sign-in window, clears the dedicated browser store, waits for WebKit's deletion completion, and stops playback. Local likes, history, queue, and main-window appearance storage remain. Google may revoke/expire a session; remembering is not a promise of indefinite authentication.
 
 Catalog requests use verified account context for Home/search/radio. Playback keeps the tested fast guest path first, with ordinary guest extraction as fallback. Authenticated extraction is attempted when guest extraction fails, using an owner-only temporary Netscape cookie file that is removed afterwards. This does not establish access to Premium-only formats; quality choices describe only the actual resolved source.
 
@@ -40,6 +40,19 @@ node scripts/check-native-sign-in.mjs "$TMPDIR/vessel-sign-in.json"
 ```
 
 The opt-in diagnostic opens and cancels the real Google window without entering credentials. Its report contains booleans only, without account profiles, cookie values, or page text. Normal builds do not run it.
+
+## Remembered sign-in follow-up (2026-10-27)
+
+- A real native cookie test went red with the original ephemeral window: a fixture cookie was present before close but absent on reopening. Merely selecting a persistent WebKit store did not reliably pass repeated process-restart checks, so browser disk/session survival is not the durability contract.
+- `scripts/check-native-remember.mjs` verifies the complete recovery path using **real macOS Keychain** and native WKWebViews. It uses fresh, test-only browser/Keychain namespaces, writes a non-account fixture cookie, deliberately erases browser data, quits/relaunches the app, restores via the same native cookie setter, and verifies explicit forgetting. No real Google credentials or the production Keychain entry are read. Reports are booleans in ignored `.cache/native-remember/`.
+- Rust tests cover account-vault restart, a remembered profile remaining Checking until verification, legacy records, Google-cookie separation from provider headers/files, browser reconnect after YouTube-cookie expiry, and explicit sign-out.
+- The real Google-window smoke test now checks the supported persistence mode, native cookie access, cancel/forget cleanup, and preserved fixture account/library state. These diagnostic modes use memory-only application services and their own browser store; they do not warm playback or load the owner's Keychain entry.
+- **Real Google password/2FA acceptance and restoration of a real signed-in account still require the owner flow below.** Native browser/vault fixtures do not prove server acceptance.
+
+```sh
+npm run tauri -- build --debug --bundles app --features native-diagnostics
+node scripts/check-native-remember.mjs src-tauri/target/debug/bundle/macos/Vessel.app/Contents/MacOS/vessel-app
+```
 
 ### Owner account verification
 

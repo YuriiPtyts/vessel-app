@@ -1,4 +1,4 @@
-//! Google owns the sign-in page. The ephemeral webview has no Vessel IPC privileges.
+//! Google owns the sign-in page. Its isolated browser profile has no Vessel IPC privileges.
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -14,6 +14,142 @@ use crate::{
 
 const LABEL: &str = "google-sign-in";
 const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F&hl=en";
+
+fn session_window<'a>(
+    handle: &'a AppHandle,
+    label: &str,
+    url: WebviewUrl,
+) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    let builder = WebviewWindowBuilder::new(handle, label, url);
+    #[cfg(target_os = "macos")]
+    if persistent_browser_available() {
+        let identifier = if cfg!(feature = "native-diagnostics")
+            && (std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS").is_some()
+                || std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS").is_some())
+        {
+            0xc37edb746c3b4b929ca4d193166c5860_u128.to_be_bytes()
+        } else {
+            0xc37edb746c3b4b929ca4d193166c5859_u128.to_be_bytes()
+        };
+        #[cfg(feature = "native-diagnostics")]
+        let identifier = {
+            let mut selected = identifier;
+            if std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS").is_some()
+                && let Ok(value) = std::env::var("VESSEL_TEST_PROFILE_ID")
+                && value.is_ascii()
+                && value.len() == 32
+            {
+                let bytes = (0..16)
+                    .map(|index| u8::from_str_radix(&value[index * 2..index * 2 + 2], 16))
+                    .collect::<std::result::Result<Vec<_>, _>>();
+                if let Ok(bytes) = bytes {
+                    selected.copy_from_slice(&bytes);
+                }
+            }
+            selected
+        };
+        return builder.incognito(false).data_store_identifier(identifier);
+    }
+    // Older macOS lacks named stores. Keep browser isolation and Keychain restore
+    // rather than sharing/clearing the main window's preferences store.
+    builder.incognito(true)
+}
+
+#[cfg(target_os = "macos")]
+pub fn persistent_browser_available() -> bool {
+    objc2_foundation::NSProcessInfo::processInfo()
+        .operatingSystemVersion()
+        .majorVersion
+        >= 14
+}
+
+#[cfg(target_os = "macos")]
+async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window.with_webview(move |platform| {
+        let send = Mutex::new(Some(send));
+        let completion = block2::RcBlock::new(move || {
+            if let Some(send) = send.lock().ok().and_then(|mut send| send.take()) { let _ = send.send(()); }
+        });
+        // SAFETY: Tauri supplies a live WKWebView on the main thread. The store
+        // copies the completion block and retains all data needed by deletion.
+        unsafe {
+            let view = platform.inner().cast::<objc2::runtime::AnyObject>();
+            let config: *mut objc2::runtime::AnyObject = objc2::msg_send![view, configuration];
+            let store: *mut objc2::runtime::AnyObject = objc2::msg_send![config, websiteDataStore];
+            let types: *mut objc2::runtime::AnyObject = objc2::msg_send![objc2::class!(WKWebsiteDataStore), allWebsiteDataTypes];
+            let date: *mut objc2::runtime::AnyObject = objc2::msg_send![objc2::class!(NSDate), dateWithTimeIntervalSince1970: 0.0_f64];
+            let _: () = objc2::msg_send![store, removeDataOfTypes: types, modifiedSince: date, completionHandler: &*completion];
+        }
+    }).map_err(|_| browser_store_error())?;
+    tokio::time::timeout(Duration::from_secs(15), receive)
+        .await
+        .map_err(|_| browser_store_error())?
+        .map_err(|_| browser_store_error())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        window
+            .clear_all_browsing_data()
+            .map_err(|_| browser_store_error())?;
+        // WebKit deletion is asynchronous. Confirm cookies are gone before a
+        // later Connect operation may reuse this profile.
+        for _ in 0..100 {
+            if window
+                .cookies()
+                .map_err(|_| browser_store_error())?
+                .is_empty()
+            {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        Err(browser_store_error())
+    })
+    .await
+    .map_err(|_| browser_store_error())?
+}
+
+fn browser_store_error() -> AppError {
+    AppError::new(
+        "sign_in_storage",
+        "The remembered Google browser session could not be updated. Try reconnecting or forgetting the saved session.",
+        true,
+    )
+}
+
+async fn restore_browser_cookies(window: WebviewWindow, cookies: Vec<SessionCookie>) -> Result<()> {
+    let cookies = CookieSession::retained_browser_cookies(cookies)?;
+    if !cookies.is_empty() {
+        // The verified vault is authoritative; do not mix another cancelled
+        // browser login's cookies with the remembered account.
+        clear_browser_data(window.clone()).await?;
+    }
+    tokio::task::spawn_blocking(move || {
+        for cookie in cookies {
+            let mut restored = tauri::webview::Cookie::build((cookie.name, cookie.value))
+                .domain(cookie.domain)
+                .path(cookie.path)
+                .secure(cookie.secure)
+                .http_only(cookie.http_only)
+                .build();
+            if let Some(expiry) = cookie
+                .expires_at
+                .and_then(|value| time::OffsetDateTime::from_unix_timestamp(value).ok())
+            {
+                restored.set_expires(expiry);
+            }
+            window
+                .set_cookie(restored)
+                .map_err(|_| browser_store_error())?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| browser_store_error())?
+}
 
 struct Attempt {
     id: u64,
@@ -50,13 +186,13 @@ impl SignIn {
             closed: closed.clone(),
         });
         let denied = closed.clone();
-        let window = WebviewWindowBuilder::new(&handle, LABEL, WebviewUrl::External(START.parse().map_err(|_| AppError::internal())?))
+        let window = session_window(&handle, LABEL, WebviewUrl::External("about:blank".parse().map_err(|_| AppError::internal())?))
             .title("Connect Google · Vessel")
             .inner_size(520.0, 740.0)
             .min_inner_size(420.0, 560.0)
             .center()
-            .incognito(true)
             .on_navigation(move |url| {
+                if url.as_str() == "about:blank" { return true; }
                 if google_rejected(url) {
                     denied.send_replace(Some(AppError::new("google_sign_in_unavailable", "Google declined sign-in in this window. You can close it and keep listening as a guest.", false)));
                     return false;
@@ -82,6 +218,19 @@ impl SignIn {
                 closed.send_replace(None);
             }
         });
+        let restored = async {
+            let cookies = app.saved_browser_cookies().await?;
+            restore_browser_cookies(window.clone(), cookies).await?;
+            window
+                .navigate(START.parse().map_err(|_| AppError::internal())?)
+                .map_err(|_| AppError::internal())
+        }
+        .await;
+        if let Err(error) = restored {
+            app.fail_sign_in(id, error.clone());
+            self.finish(&handle, &app, id);
+            return Err(error);
+        }
         let controller = Arc::downgrade(self);
         let state = app.account();
         tauri::async_runtime::spawn(async move {
@@ -126,6 +275,30 @@ impl SignIn {
         Ok(app.account())
     }
 
+    pub async fn forget(&self, handle: &AppHandle, app: &Application) -> Result<AccountSnapshot> {
+        let _operation = self.operation.lock().await;
+        self.shutdown(handle, app);
+        let browser = async {
+            let cleanup = session_window(
+                handle,
+                "google-session-cleanup",
+                WebviewUrl::External("about:blank".parse().map_err(|_| browser_store_error())?),
+            )
+            .visible(false)
+            .on_navigation(|url| url.as_str() == "about:blank")
+            .build()
+            .map_err(|_| browser_store_error())?;
+            let result = clear_browser_data(cleanup.clone()).await;
+            let _ = cleanup.close();
+            result
+        };
+        // Browser forgetting must still run if playback stop fails or stalls.
+        let (snapshot, browser) = tokio::join!(app.sign_out(), browser);
+        let snapshot = snapshot?;
+        browser?;
+        Ok(snapshot)
+    }
+
     pub fn shutdown(&self, handle: &AppHandle, app: &Application) {
         let id = self
             .active
@@ -160,6 +333,25 @@ impl SignIn {
             }
         }
     }
+}
+
+#[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+mod remember_probe;
+
+#[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
+pub async fn remember_smoke(handle: AppHandle) {
+    let Some(destination) = std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS") else {
+        return;
+    };
+    let result = remember_probe::run(&handle).await;
+    let data =
+        result.unwrap_or_else(|error| serde_json::json!({"passed":false,"error":error.code}));
+    let _ = std::fs::write(
+        destination,
+        serde_json::to_vec_pretty(&data).unwrap_or_default(),
+    );
+    // The harness requests a normal native quit after receiving this report,
+    // allowing WebKit to finish its application-termination lifecycle.
 }
 
 fn capture_session(window: &WebviewWindow) -> Result<Option<CookieSession>> {

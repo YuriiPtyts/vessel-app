@@ -110,7 +110,7 @@ pub async fn sign_in_smoke(handle: tauri::AppHandle) {
     let controller = handle.state::<Arc<SignIn>>().inner().clone();
     let before = app.account();
     let library = app.library().ok();
-    let mut report = json!({"opened": false, "privateStore": null, "googleOrigin": false, "cookiesReadable": false});
+    let mut report = json!({"opened": false, "persistentStore": null, "persistentStoreSupported": vessel_app::sign_in::persistent_browser_available(), "googleOrigin": false, "cookiesReadable": false});
     if controller.start(handle.clone(), app.clone()).await.is_ok() {
         tokio::time::sleep(Duration::from_secs(5)).await;
         if let Some(window) = handle.get_webview_window("google-sign-in") {
@@ -131,9 +131,9 @@ pub async fn sign_in_smoke(handle: tauri::AppHandle) {
                     let value: objc2::runtime::Bool = objc2::msg_send![store, isPersistent];
                     value.as_bool()
                 };
-                let _ = send.send(!persistent);
+                let _ = send.send(persistent);
             });
-            report["privateStore"] = json!(receive.await.ok());
+            report["persistentStore"] = json!(receive.await.ok());
             report["cookiesReadable"] = json!(
                 tokio::task::spawn_blocking(move || window.cookies().is_ok())
                     .await
@@ -157,6 +157,7 @@ pub async fn sign_in_smoke(handle: tauri::AppHandle) {
             .and_then(|value| serde_json::to_value(value).ok())
             == library.and_then(|value| serde_json::to_value(value).ok())
     );
+    report["browserForgotten"] = json!(controller.forget(&handle, &app).await.is_ok());
     // This is an opt-in diagnostic result, containing no profile or cookie values.
     if let Ok(bytes) = serde_json::to_vec_pretty(&report) {
         let _ = std::fs::write(destination, bytes);

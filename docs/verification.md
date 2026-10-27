@@ -162,6 +162,20 @@ The original report contains a null-address SIGSEGV in libmpv during CoreAudio d
 
 Google password/2FA, real-account Keychain operations, authenticated/Premium playback, broader hardware/region coverage, and long-session CPU/energy behavior retain the earlier verification limits.
 
+## Remembered Google account follow-up (2026-10-27)
+
+The owner requested keeping their account signed in across restarts. The original isolated sign-in window was ephemeral. A fixture cookie disappeared on close/reopen; a persistent-store flag alone also failed repeated browser-only process-restart checks. Remembering now uses **Keychain as the durable source**, including separately scoped Google browser cookies restored before the sign-in window navigates, alongside the already implemented YouTube provider-session restore. A remembered profile remains Checking until server verification. Explicit sign-out removes the complete stored session and awaits deletion of the isolated browser store.
+
+### Verification
+
+- Rust restart tests preserve the session/profile, keep authenticated requests disabled until verification, preserve legacy records without the new browser-cookie field, retain still-valid Google browser cookies when YouTube cookies expire, and keep Google-domain cookies out of provider headers and extractor files. Existing cancelled-write rollback and stale-attempt tests remain applicable.
+- `node scripts/check-native-remember.mjs <native-diagnostics executable>` passes native close/reopen and **two-process macOS Keychain recovery**. Browser data is deliberately erased before recovery, so this is not a test that accidentally reuses WebKit's memory cache. The test uses fresh fixture-only Keychain/browser namespaces, restores native cookie data, checks main-window isolation, and verifies explicit forgetting. It neither reads the production vault entry nor logs cookie values. Real account verification is not simulated as Connected.
+- The real Google-window smoke test passes supported persistence mode, Rust cookie API access, cancel/forget cleanup, and fixture account/library preservation. No account credentials are entered. These diagnostic modes now use memory-only application services and skip playback warm-up.
+- Final checks pass: **33 ordinary library tests**, the binary IPC-origin test, the non-network application check, **16 mocked WebKit UI tests**, Svelte diagnostics, production frontend build, Rust fmt, and Clippy with warnings denied (default and `native-diagnostics`). The remembered-browser and Google-window checks also passed from the diagnostic `.app` bundle.
+- The normal release `.app` packages successfully at **198.72 MiB**, runs for eight seconds with `PATH=/usr/bin:/bin`, and quits via its own NSRunningApplication (`exit 0`, 301 captured output bytes). Final packaged-runtime regressions passed guest Opus decoding, advancing playback, pause/seek, paused AAC switching, resume/stop, and cancellation; the separate guest flow observed **4.184 seconds** to its decoded/position threshold including **919 ms** inspection on that run. This is one network/host observation, not a latency guarantee.
+
+Real Google password/2FA and a real account's server-side acceptance after restart still need owner verification. These account changes do not claim to fix the reported audible volume lag or matching libmpv/CoreAudio SIGSEGV; current evidence and limitations are in `audio-device-investigation.md`.
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.
