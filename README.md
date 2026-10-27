@@ -54,7 +54,7 @@ npm run tauri -- build --bundles app
 open src-tauri/target/release/bundle/macos/Vessel.app
 ```
 
-Create a verified development ZIP with `npm run package:macos`. For downloads intended to pass Gatekeeper, configure the Developer ID/Keychain credentials documented in [macOS distribution](docs/macos-distribution.md) and use `npm run release:macos`. Upload the packager's archive and sidecars; do not ZIP the raw Tauri bundle directly.
+Create a verified development ZIP and drag-and-drop DMG with `npm run package:macos`. Open the DMG and drag **Vessel** onto its **Applications** shortcut. For downloads intended to pass Gatekeeper, configure the Developer ID/Keychain credentials documented in [macOS distribution](docs/macos-distribution.md) and use `npm run release:macos`. Upload the packager's downloads and sidecars; do not ZIP the raw Tauri bundle directly.
 
 Browser-only visual preview (search/playback require the desktop app):
 

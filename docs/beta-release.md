@@ -11,7 +11,9 @@ Private Apple Silicon macOS development beta. This is a prerelease, not a stable
 
 ## Install the candidate
 
-Download `Vessel-0.1.0-beta.1-macos-arm64.zip`, `SHA256SUMS`, and `SIGNING.json` from the private release. Verify the archive with `shasum -a 256 -c SHA256SUMS`, unzip it, quit any older Vessel instance, and move `Vessel.app` to Applications. The download includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+Download `Vessel-0.1.0-beta.1-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+
+The ZIP download remains available. `SHA256SUMS` covers both files; download both alongside it to run `shasum -a 256 -c SHA256SUMS`, or compare the single downloaded file with its matching line. `SIGNING.json` records the package checks and signing status.
 
 The repacked download repairs the invalid bundle/framework signatures in the original ZIP and verifies all bundled code after extraction. It is **ad-hoc signed**, not Developer-ID signed or notarized, and Gatekeeper still rejects it as untrusted. Warning-free launch on other Macs requires the credentials and notarization workflow in [macOS distribution](macos-distribution.md). It was tested on Apple Silicon macOS 27; older macOS versions and Intel Macs have not been validated. See [native dependency provenance and distribution limits](native-dependencies.md).
 
@@ -28,4 +30,4 @@ If a crash recurs, use `scripts/inspect-crash.mjs` as described in the investiga
 
 Current commands, observed results, and the distinction between mocked UI, real native checks, and live provider checks are recorded in [the verification log](verification.md). Real Google password/2FA acceptance, real-account recovery, authenticated/Premium playback, minimum-OS coverage, and long-session resource behavior retain the documented limitations.
 
-Release assets contain the app archive, its SHA-256 checksum, and a machine-readable signing report. Source, patch, and dependency provenance are tracked in `native-dependencies.json`, `native/mpv-build.json`, `native/patches/`, and [native dependencies](native-dependencies.md). Keep this repository and its beta private.
+Release assets contain the drag-and-drop DMG, ZIP, their SHA-256 checksums, and a machine-readable signing report. Source, patch, and dependency provenance are tracked in `native-dependencies.json`, `native/mpv-build.json`, `native/patches/`, and [native dependencies](native-dependencies.md). Keep this repository and its beta private.

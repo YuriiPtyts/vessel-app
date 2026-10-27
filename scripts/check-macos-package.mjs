@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { access, mkdtemp, open, readdir, rm } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, open, readdir, readlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,19 +79,60 @@ export async function verifyArchive(archive, options) {
   }
 }
 
+export async function verifyDiskImage(image, options) {
+  run('/usr/bin/hdiutil', ['verify', image]);
+  const temporary = await mkdtemp(join(tmpdir(), 'vessel-dmg-check-'));
+  const mount = join(temporary, 'volume');
+  await mkdir(mount);
+  let mounted = false;
+  try {
+    run('/usr/bin/hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, image]);
+    mounted = true;
+    const applications = join(mount, 'Applications');
+    if (
+      !(await lstat(applications)).isSymbolicLink() ||
+      (await readlink(applications)) !== '/Applications'
+    ) {
+      throw new Error('The DMG must contain an Applications shortcut targeting /Applications.');
+    }
+    const count = await verifyApp(join(mount, 'Vessel.app'), options);
+    if (options?.distribution) {
+      run('/usr/bin/xcrun', ['stapler', 'validate', image]);
+      run('/usr/sbin/spctl', [
+        '--assess',
+        '--type',
+        'open',
+        '--context',
+        'context:primary-signature',
+        '--verbose=4',
+        image,
+      ]);
+    }
+    return count;
+  } finally {
+    // If detaching fails, keep the mount directory rather than deleting through a live mount.
+    if (mounted) run('/usr/bin/hdiutil', ['detach', mount]);
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     if (process.platform !== 'darwin') throw new Error('Package verification requires macOS.');
     const [input, ...flags] = process.argv.slice(2);
     if (!input || flags.some((flag) => flag !== '--distribution')) {
-      throw new Error('Usage: node scripts/check-macos-package.mjs <app-or-zip> [--distribution]');
+      throw new Error(
+        'Usage: node scripts/check-macos-package.mjs <app-zip-or-dmg> [--distribution]',
+      );
     }
     const options = { distribution: flags.includes('--distribution') };
     const count = input.endsWith('.zip')
       ? await verifyArchive(resolve(input), options)
-      : await verifyApp(resolve(input), options);
+      : input.endsWith('.dmg')
+        ? await verifyDiskImage(resolve(input), options)
+        : await verifyApp(resolve(input), options);
     console.log(
-      `Verified bundle resource seal and ${count} code signatures${options.distribution ? ', stapled notarization, and Gatekeeper acceptance' : ' (signature integrity only; not Gatekeeper approval)'}.`,
+      `Verified bundle resource seal and ${count} code signatures${input.endsWith('.dmg') ? ', DMG integrity, and the Applications shortcut' : ''}${options.distribution ? ', stapled notarization, and Gatekeeper acceptance' : ' (signature integrity only; not Gatekeeper approval)'}.`,
     );
   } catch (error) {
     console.error(error.message);

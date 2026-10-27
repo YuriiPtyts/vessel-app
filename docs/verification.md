@@ -218,6 +218,14 @@ Real Google password/2FA and a real account's server-side acceptance after resta
 - **Warning-free distribution is still blocked:** Keychain reports **zero valid signing identities**. The repaired ad-hoc app passes signature-integrity checks but **Gatekeeper rejects it**. The stronger distribution check rejects the missing notarization ticket, and distribution packaging rejects missing credentials before altering outputs. No Gatekeeper/quarantine policy was disabled or bypassed. A real Developer ID/notarization run remains unverified until the required identity and Keychain profile are available; see [macOS distribution](macos-distribution.md).
 - GitHub already reported `v0.1.0-beta.1` as a published prerelease when this follow-up started. This correction repacks the same beta without moving its existing tag; the signing report explicitly records the missing Apple approval.
 
+## DMG drag-and-drop installer (2026-10-27)
+
+- `npm run package:macos` now produces both the ZIP and **`Vessel-0.1.0-beta.1-macos-arm64.dmg`**. The compressed read-only HFS+ image contains `Vessel.app` and an `Applications` symlink targeting `/Applications` for drag-and-drop installation.
+- A real `hdiutil verify` and read-only attach pass. The verifier checks the actual shortcut target and **107 code signatures** plus the mounted app's resource seal, confirms the ZIP/DMG code inventories match, and detaches the image. This verifies the actual disk image, not a mocked installer interface or a manual Finder drag.
+- The DMG is **76,452,806 bytes**; the ZIP remains **75,357,276 bytes**. `SHA256SUMS` checks both files successfully, and `SIGNING.json` records both hashes, mounted-image verification, and the shortcut target. All outputs remain ignored build artifacts.
+- Svelte diagnostics, **18 mocked WebKit UI checks**, the production frontend build, normal macOS app packaging, Rust fmt, default Clippy with warnings denied, **33 library tests**, the IPC-origin test, the non-network application check, and formatting of the changed scripts/docs pass.
+- The development DMG contains the same ad-hoc-signed app and is an unsigned container; changing the download format does not provide Apple trust. The credential-backed distribution path now also signs, notarizes, staples, and assesses the DMG, but a real Apple-backed run still requires the previously documented certificate and Keychain profile.
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.
