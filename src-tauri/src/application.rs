@@ -359,9 +359,8 @@ impl Application {
         self.cancel_inspection();
         self.cancel_radio();
         let metadata = self.find_track(id);
-        let context: Vec<_> = context
+        let context: Vec<_> = context_window(&context, id)
             .iter()
-            .take(100)
             .filter_map(|id| self.find_track(id))
             .collect();
         let generation = {
@@ -859,5 +858,33 @@ impl Application {
         self.catalog.cancel();
         self.account_library.cancel();
         self.player.shutdown();
+    }
+}
+
+// Account collections can exceed the queue bound. Keep the selected row and its
+// following songs rather than resolving only the first 100 rows of the library.
+fn context_window<'a>(context: &'a [String], id: &str) -> &'a [String] {
+    let start = context
+        .iter()
+        .position(|item| item == id)
+        .unwrap_or(0)
+        .saturating_sub(20);
+    &context[start..context.len().min(start + 100)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_window;
+
+    #[test]
+    fn large_collection_context_keeps_the_selected_song_and_following_order() {
+        let context: Vec<_> = (0..1000).map(|index| index.to_string()).collect();
+        let window = context_window(&context, "700");
+        assert_eq!(window.len(), 100);
+        assert_eq!(window[0], "680");
+        assert_eq!(window[20], "700");
+        assert_eq!(window[99], "779");
+        assert_eq!(context_window(&context, "999").len(), 21);
+        assert_eq!(context_window(&[], "missing").len(), 0);
     }
 }
