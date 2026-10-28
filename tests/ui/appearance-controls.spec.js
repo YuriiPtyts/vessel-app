@@ -131,7 +131,9 @@ test('high transparency strengthens glyphs without recoloring the material or co
   const heading = page.locator('.provider-home-heading h1');
   expect(
     await heading.evaluate((node) => parseFloat(getComputedStyle(node).webkitTextStrokeWidth)),
-  ).toBeGreaterThanOrEqual(0.5);
+    'small text must retain a filled center, not a thin outline',
+  ).toBe(0);
+  expect(await heading.evaluate((node) => getComputedStyle(node).textShadow)).not.toBe('none');
   await page.getByRole('button', { name: 'Close appearance settings', exact: true }).click();
   const selectors = [
     { selector: '.provider-home-heading p:last-child, .sidebar nav > button > span' },
@@ -139,7 +141,7 @@ test('high transparency strengthens glyphs without recoloring the material or co
   const strengthened = await renderedTextContrast(page, selectors);
   expect(strengthened.every((sample) => sample.ratio >= sample.minimum)).toBe(true);
   await page.addStyleTag({
-    content: '.app-frame, .app-frame * { -webkit-text-stroke-width: 0 !important; }',
+    content: '.app-frame, .app-frame * { text-shadow: none !important; }',
   });
   const unprotected = await renderedTextContrast(page, selectors);
   expect(unprotected.some((sample) => sample.ratio < sample.minimum)).toBe(true);

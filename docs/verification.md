@@ -1,5 +1,13 @@
 # Verification log
 
+## Windows backdrop, sign-in handoff, and filled text beta.9 (2026-10-28)
+
+- Focused tests went red for the opaque Windows main-window configuration, capture waiting only for `music.youtube.com`, and a blocked YouTube consent host. Windows now declares a clear native/WebView2 surface and Acrylic; the runtime material command applies/clears the backdrop instead of doing nothing.
+- Scoped SAPISID/first-/third-party candidates no longer require `LOGIN_INFO`. Tests reject Google-only/visitor cookies and still require provider acknowledgement. Music-scoped cookies are captured first on a worker; partial network verification retries with a 45-second deadline, separate from protected-vault persistence/cancellation. Cookie capture itself is bounded. Completed trusted YouTube handoffs can finish before a Music redirect.
+- **50 macOS library tests**, **two binary tests**, non-network integration, formatting, and Clippy with warnings denied (default/diagnostic) pass. Tests cover consent/origin handling, minimal cookie candidates, verification retry, timeout, and cancellation.
+- **52 WebKit checks** and **28 focused Chromium checks** pass. Low-tint dark text has zero stroke, semibold filled centers, and a real shadow halo; surface/icon/border colors remain fixed. The halo audit uses two renders and actual covered glyph cores, not an assumed outline contrast. Removing the halo is red-capable. Final dark 50% samples measure at least **5.23:1** in WebKit and **5.79:1** in Chromium; normal 70% text still meets its existing thresholds. These are controlled browser fixtures.
+- The Windows diagnostic is strengthened to check actual WebView2 background alpha, DWM backdrop removal/reapply, dark-text declarations, and native InPrivate cookie/handoff lifecycle with a dummy cookie/provider acknowledgement. This is distinct from real Google login/2FA acceptance, which still requires the owner's retry.
+
 ## Independent appearance and stable popovers beta.8 (2026-10-28)
 
 - Reproduced the tint/mode coupling: moving 69→70% changed material RGB from `[255,255,255]` to `[35,33,54]`. Explicit Light/Dark controls and a top-bar shortcut now keep material RGB fixed through 50–100%. Legacy 50%/80% records keep their previous appearance once and store `colorMode` without resetting other v2 choices. High transparency changes glyph fill/stroke only; material, icon, and border colors have separate regression assertions.

@@ -1,5 +1,5 @@
-// Read actual rendered backgrounds with text temporarily hidden. Computed text
-// colors are compared in sRGB; anti-aliased glyph edges are not contrast samples.
+// Plain text uses declared ink against rendered backgrounds. Shadow-backed text
+// uses actual filled glyph cores against a second render retaining the halo.
 export async function renderedTextContrast(page, selectors) {
   const samples = await page.evaluate((selectors) => {
     const canvas = document.createElement('canvas');
@@ -42,15 +42,10 @@ export async function renderedTextContrast(page, selectors) {
           context.fillStyle = style.webkitTextFillColor || style.color;
           context.fillRect(0, 0, 1, 1);
           const color = [...context.getImageData(0, 0, 1, 1).data];
-          context.clearRect(0, 0, 1, 1);
-          context.fillStyle = style.webkitTextStrokeColor;
-          context.fillRect(0, 0, 1, 1);
-          const outline = [...context.getImageData(0, 0, 1, 1).data];
           let opacity = 1;
           for (let ancestor = range.element; ancestor; ancestor = ancestor.parentElement)
             opacity *= Number(getComputedStyle(ancestor).opacity);
           color[3] = (color[3] / 255) * opacity;
-          outline[3] = (outline[3] / 255) * opacity;
           let x = Math.max(box.left, range.rect.left),
             y = Math.max(box.top, range.rect.top);
           let right = Math.min(box.right, range.rect.right),
@@ -77,10 +72,7 @@ export async function renderedTextContrast(page, selectors) {
               elementId: id,
               text: range.text.slice(0, 35),
               color,
-              outline,
-              outlined:
-                parseFloat(style.webkitTextStrokeWidth) >= 0.5 &&
-                style.paintOrder.startsWith('stroke'),
+              shadowed: style.textShadow !== 'none',
               minimum,
               x,
               y,
@@ -92,11 +84,13 @@ export async function renderedTextContrast(page, selectors) {
     }
     return samples;
   }, selectors);
+  const visible = samples.some((sample) => sample.shadowed)
+    ? await page.screenshot({ animations: 'disabled' })
+    : null;
   const hidden = await page.addStyleTag({
     content: `
     [data-contrast-target], [data-contrast-target] *, [data-contrast-target]::placeholder {
       color: transparent !important; -webkit-text-fill-color: transparent !important;
-      text-shadow: none !important;
       -webkit-text-stroke-width: 0 !important;
     }
   `,
@@ -104,7 +98,7 @@ export async function renderedTextContrast(page, selectors) {
   try {
     const png = await page.screenshot({ animations: 'disabled' });
     return await page.evaluate(
-      async ({ png, samples }) => {
+      async ({ png, visible, samples }) => {
         const image = new Image();
         image.src = `data:image/png;base64,${png}`;
         await image.decode();
@@ -114,6 +108,15 @@ export async function renderedTextContrast(page, selectors) {
         const context = canvas.getContext('2d');
         context.drawImage(image, 0, 0);
         const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let glyphs = null;
+        if (visible) {
+          const ink = new Image();
+          ink.src = `data:image/png;base64,${visible}`;
+          await ink.decode();
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(ink, 0, 0);
+          glyphs = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        }
         const sx = canvas.width / innerWidth,
           sy = canvas.height / innerHeight;
         const luminance = (color) =>
@@ -135,49 +138,51 @@ export async function renderedTextContrast(page, selectors) {
             for (
               let y = Math.max(0, Math.ceil((sample.y + 2) * sy));
               y < Math.min(canvas.height, (sample.y + sample.height - 2) * sy);
-              y += 2
+              y += sample.shadowed ? 1 : 2
             ) {
               for (
                 let x = Math.max(0, Math.ceil((sample.x + 2) * sx));
                 x < Math.min(canvas.width, (sample.x + sample.width - 2) * sx);
-                x += 2
+                x += sample.shadowed ? 1 : 2
               ) {
-                const hit = document.elementFromPoint(x / sx, y / sy);
-                if (!hit || !element.contains(hit)) continue;
                 const offset = (y * canvas.width + x) * 4;
                 const background = [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
                 const foreground = background.map(
                   (value, i) => sample.color[i] * sample.color[3] + value * (1 - sample.color[3]),
                 );
-                let visibleContrast = contrast(foreground, background);
-                // A real glyph outline is part of the text treatment, not a
-                // panel background. Count it only when substantial, opaque,
-                // painted behind the fill, and contrasting with the fill.
-                if (sample.outlined && sample.outline[3] >= 0.9) {
-                  const outline = background.map(
-                    (value, i) =>
-                      sample.outline[i] * sample.outline[3] + value * (1 - sample.outline[3]),
+                let visibleContrast;
+                if (sample.shadowed && glyphs) {
+                  const painted = [glyphs[offset], glyphs[offset + 1], glyphs[offset + 2]];
+                  const difference = Math.max(
+                    ...painted.map((value, i) => Math.abs(value - background[i])),
                   );
-                  if (contrast(foreground, outline) >= sample.minimum) {
-                    visibleContrast = Math.max(visibleContrast, contrast(outline, background));
-                  }
+                  const full = Math.max(
+                    ...foreground.map((value, i) => Math.abs(value - background[i])),
+                  );
+                  if (difference < 25 || !full || difference / full < 0.7) continue;
+                  visibleContrast = contrast(painted, background);
+                } else {
+                  visibleContrast = contrast(foreground, background);
                 }
+                const hit = document.elementFromPoint(x / sx, y / sy);
+                if (!hit || !element.contains(hit)) continue;
                 ratio = Math.min(ratio, visibleContrast);
               }
             }
+            if (sample.shadowed && !Number.isFinite(ratio)) ratio = 0;
             return Number.isFinite(ratio)
               ? {
                   selector: sample.selector,
                   text: sample.text,
                   ratio,
                   minimum: sample.minimum,
-                  outlined: sample.outlined,
+                  shadowed: sample.shadowed,
                 }
               : null;
           })
           .filter(Boolean);
       },
-      { png: png.toString('base64'), samples },
+      { png: png.toString('base64'), visible: visible?.toString('base64') ?? null, samples },
     );
   } finally {
     await hidden.evaluate((node) => node.remove());

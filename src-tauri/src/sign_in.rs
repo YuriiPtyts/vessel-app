@@ -234,21 +234,41 @@ impl SignIn {
         let controller = Arc::downgrade(self);
         let state = app.account();
         tauri::async_runtime::spawn(async move {
+            let capture_window = window.clone();
+            let verify_window = window.clone();
+            let verify_app = app.clone();
             let capture = async {
-                let mut interval = tokio::time::interval(Duration::from_millis(1500));
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                loop {
-                    interval.tick().await;
-                    let window = window.clone();
-                    // Tauri's cookie API dispatches to the main thread; never call it there.
-                    let session = tokio::task::spawn_blocking(move || capture_session(&window))
-                        .await
-                        .map_err(|_| AppError::internal())??;
-                    if let Some(session) = session {
-                        app.complete_sign_in(id, session).await?;
-                        return Ok::<(), AppError>(());
-                    }
-                }
+                let (session, profile) = wait_for_verified_session(
+                    move || {
+                        let window = capture_window.clone();
+                        async move {
+                            // WebView2 cookie APIs must not block its UI/event thread.
+                            tokio::time::timeout(
+                                Duration::from_secs(10),
+                                tokio::task::spawn_blocking(move || capture_session(&window)),
+                            )
+                            .await
+                            .map_err(|_| cookie_capture_error())?
+                            .map_err(|_| AppError::internal())?
+                        }
+                    },
+                    move |session| {
+                        let window = verify_window.clone();
+                        let app = verify_app.clone();
+                        async move {
+                            let _ = window.set_title("Finishing Google connection · Vessel");
+                            let profile = app.verify_sign_in(&session).await?;
+                            Ok((session, profile))
+                        }
+                    },
+                    Duration::from_millis(1500),
+                    Duration::from_secs(45),
+                )
+                .await?;
+                // Protected storage can require an OS prompt. Only network
+                // verification has the short deadline; cancellation still fences
+                // the serialized vault mutation through the account attempt id.
+                app.complete_sign_in(id, session, profile).await.map(|_| ())
             };
             let result = tokio::select! {
                 result = capture => result,
@@ -338,6 +358,17 @@ impl SignIn {
 #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
 mod remember_probe;
 
+#[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
+mod windows_probe;
+
+#[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
+pub async fn windows_handoff_smoke(
+    handle: AppHandle,
+    app: Arc<Application>,
+) -> Result<serde_json::Value> {
+    windows_probe::run(handle, app).await
+}
+
 #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
 pub async fn remember_smoke(handle: AppHandle) {
     let Some(destination) = std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS") else {
@@ -356,20 +387,41 @@ pub async fn remember_smoke(handle: AppHandle) {
 
 fn capture_session(window: &WebviewWindow) -> Result<Option<CookieSession>> {
     let url = window.url().map_err(|_| AppError::cancelled())?;
-    if url.scheme() != "https" || url.host_str() != Some("music.youtube.com") {
+    if !capture_origin(&url) {
         return Ok(None);
     }
-    let cookies = window.cookies().map_err(|_| {
-        AppError::new(
-            "sign_in_cookies",
-            "The Google session could not be read. Close this window and try connecting again.",
-            true,
+    read_browser_session(window)
+}
+
+fn read_browser_session(window: &WebviewWindow) -> Result<Option<CookieSession>> {
+    // Put Music-scoped credentials first; a large Google cookie jar must not
+    // crowd the account cookies out of the retained-cookie limit.
+    let music = window
+        .cookies_for_url(
+            "https://music.youtube.com/"
+                .parse()
+                .map_err(|_| AppError::internal())?,
         )
-    })?;
-    let cookies = cookies
+        .map_err(|_| cookie_capture_error())?;
+    let all = window.cookies().map_err(|_| cookie_capture_error())?;
+    let mut seen = std::collections::BTreeSet::new();
+    let cookies = music
         .into_iter()
-        .map(|cookie| SessionCookie {
-            domain: cookie.domain().unwrap_or("music.youtube.com").into(),
+        .map(|cookie| (cookie, Some("music.youtube.com")))
+        .chain(all.into_iter().map(|cookie| (cookie, None)))
+        .filter_map(|(cookie, fallback)| {
+            let domain = cookie.domain().or(fallback)?.to_owned();
+            if !seen.insert((
+                domain.clone(),
+                cookie.path().unwrap_or("/").to_owned(),
+                cookie.name().to_owned(),
+            )) {
+                return None;
+            }
+            Some((cookie, domain))
+        })
+        .map(|(cookie, domain)| SessionCookie {
+            domain,
             path: cookie.path().unwrap_or("/").into(),
             name: cookie.name().into(),
             value: cookie.value().into(),
@@ -384,6 +436,68 @@ fn capture_session(window: &WebviewWindow) -> Result<Option<CookieSession>> {
     Ok(CookieSession::from_cookies(cookies).ok())
 }
 
+fn capture_origin(url: &url::Url) -> bool {
+    allowed_navigation(url)
+        && matches!(
+            url.host_str(),
+            Some("music.youtube.com" | "www.youtube.com" | "youtube.com" | "accounts.youtube.com")
+        )
+}
+
+fn cookie_capture_error() -> AppError {
+    AppError::new(
+        "sign_in_cookies",
+        "The browser session could not be read. Connect Google again from Account.",
+        true,
+    )
+}
+
+async fn wait_for_verified_session<Capture, Verify, Verified>(
+    mut capture: impl FnMut() -> Capture,
+    mut verify: impl FnMut(CookieSession) -> Verify,
+    period: Duration,
+    verification_limit: Duration,
+) -> Result<Verified>
+where
+    Capture: std::future::Future<Output = Result<Option<CookieSession>>> + Send,
+    Verify: std::future::Future<Output = Result<Verified>> + Send,
+{
+    let mut interval = tokio::time::interval(period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut started = None;
+    loop {
+        interval.tick().await;
+        let Some(session) = capture().await? else {
+            started = None;
+            continue;
+        };
+        let started = started.get_or_insert_with(std::time::Instant::now);
+        let Some(remaining) = verification_limit.checked_sub(started.elapsed()) else {
+            return Err(verification_error());
+        };
+        match tokio::time::timeout(remaining, verify(session))
+            .await
+            .map_err(|_| verification_error())?
+        {
+            Ok(verified) => return Ok(verified),
+            Err(error) if matches!(error.code, "session_expired" | "catalog_unavailable") => {
+                if started.elapsed() >= verification_limit {
+                    return Err(verification_error());
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn verification_error() -> AppError {
+    AppError::new(
+        "sign_in_verification",
+        "YouTube Music could not verify the browser session. Connect again from Account.",
+        true,
+    )
+}
+
 fn allowed_navigation(url: &url::Url) -> bool {
     url.scheme() == "https"
         && url.username().is_empty()
@@ -396,6 +510,7 @@ fn allowed_navigation(url: &url::Url) -> bool {
                     | "consent.google.com"
                     | "myaccount.google.com"
                     | "accounts.youtube.com"
+                    | "consent.youtube.com"
                     | "youtube.com"
                     | "www.youtube.com"
                     | "music.youtube.com"
@@ -414,6 +529,107 @@ fn google_rejected(url: &url::Url) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture_session() -> CookieSession {
+        CookieSession::from_cookies(
+            [
+                ("SAPISID", "fixture-session"),
+                ("LOGIN_INFO", "fixture-login"),
+            ]
+            .into_iter()
+            .map(|(name, value)| SessionCookie {
+                domain: ".youtube.com".into(),
+                path: "/".into(),
+                name: name.into(),
+                value: value.into(),
+                secure: true,
+                http_only: true,
+                expires_at: None,
+            })
+            .collect(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn browser_handoff_retries_partial_verification_and_finishes_only_after_acknowledgement()
+    {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        wait_for_verified_session(
+            || std::future::ready(Ok(Some(fixture_session()))),
+            |_| {
+                let first = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+                async move {
+                    if first {
+                        Err(crate::account::session_error())
+                    } else {
+                        Ok(())
+                    }
+                }
+            },
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn browser_handoff_bounds_stalled_provider_verification() {
+        let error = wait_for_verified_session(
+            || std::future::ready(Ok(Some(fixture_session()))),
+            |_| std::future::pending::<Result<()>>(),
+            Duration::from_millis(1),
+            Duration::from_millis(20),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "sign_in_verification");
+    }
+
+    #[tokio::test]
+    async fn browser_handoff_does_not_retry_a_cancelled_attempt() {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let error = wait_for_verified_session(
+            || std::future::ready(Ok(Some(fixture_session()))),
+            |_| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                std::future::ready(Err::<(), _>(AppError::cancelled()))
+            },
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "cancelled");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+    #[test]
+    fn completed_youtube_handoffs_can_be_captured_before_music_redirects() {
+        for origin in [
+            "https://music.youtube.com/",
+            "https://www.youtube.com/signin",
+            "https://youtube.com/",
+            "https://accounts.youtube.com/",
+        ] {
+            assert!(
+                capture_origin(&origin.parse().unwrap()),
+                "completed YouTube handoff must not wait indefinitely: {origin}"
+            );
+        }
+        assert!(!capture_origin(
+            &"https://accounts.google.com/".parse().unwrap()
+        ));
+        assert!(!capture_origin(
+            &"https://youtube.com.attacker.test/".parse().unwrap()
+        ));
+    }
+    #[test]
+    fn youtube_consent_redirect_is_not_silently_blocked() {
+        assert!(allowed_navigation(
+            &"https://consent.youtube.com/".parse().unwrap()
+        ));
+    }
     #[test]
     fn sign_in_navigation_stays_on_google_and_youtube_https_origins() {
         assert!(allowed_navigation(&START.parse().unwrap()));

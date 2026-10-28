@@ -4,7 +4,7 @@
 
 - Light/Dark is an explicit saved preference, available in Appearance and through the top-bar sun/moon button.
 - Glass tint changes the shared material alpha from 50–100%. It never changes the selected mode, surface RGB, or icon colors. Opaque mode makes that same material solid.
-- Below 70% tint, only glyphs receive extra contrast. Light mode adds a small same-color stroke. Dark mode uses white text fill with a 0.65px black edge, painted behind the fill. Primary filled buttons retain their normal dark text. SVG icons are excluded from this glyph treatment.
+- Below 70% tint, only text receives extra contrast. Text strokes are removed so small letters retain their filled centers and normal antialiasing. Dark mode uses semibold white text with a dark halo painted behind it; light mode keeps dark letters with modest extra weight. Filled buttons retain normal dark text and SVG icons have no text shadow.
 - Increased contrast uses semantic text roles for the selected mode. An older hard-coded pale artist-caption override was removed because it failed in light mode.
 - Existing v2 preferences gain `colorMode` without resetting other choices. Older beta.7 records infer their previous mode once; changing tint afterward does not infer a new mode.
 
@@ -32,6 +32,6 @@ VESSEL_UI_BROWSER=chromium npm run test:ui -- tests/ui/appearance-controls.spec.
 - Sidebar coverage retains 80 playlists, actual wheel scrolling, and reachable controls at 1100×700 and 420×800.
 - Text checks require 4.5:1 for ordinary text and 3:1 for large headings. The final Home/search samples measure at least **5.05:1**, using the outline-aware model where the glyph edge is active.
 
-`tests/ui/contrast.js` samples actual rendered backgrounds with glyph fill/stroke hidden. It reads the actual text-fill color and admits an outline only when it is at least 0.5px, near-opaque, painted behind the fill, and itself contrasts with the fill. The comparison then uses the stronger visible glyph edge/fill against the background. A regression removes the stroke and verifies that the unprotected dark-mode text fails on the bright fixture; it does not merely assume that having a shadow is enough.
+For plain text, `tests/ui/contrast.js` compares declared ink with rendered backgrounds. For halo-backed text it takes two renders: normal text and transparent fill with the actual shadow retained. It checks visible glyph cores with at least 70% fill coverage against their real halo background; missing cores fail rather than silently disappearing from the audit. A regression removes the halo and verifies that unprotected dark-mode text fails on the bright fixture. Text-stroke width must remain zero.
 
 These are declared-glyph/background comparisons, not an audit of every anti-aliased display pixel or native desktop compositor. Native window/package results and remaining hardware/account limits are recorded in [verification](verification.md).

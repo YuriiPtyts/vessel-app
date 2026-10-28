@@ -90,11 +90,12 @@ impl CookieSession {
             cookies,
             google_cookies,
         };
-        if result
-            .cookie_value("SAPISID")
-            .or_else(|| result.cookie_value("__Secure-3PAPISID"))
-            .is_none()
-            || result.cookie_value("LOGIN_INFO").is_none()
+        // Cookie eligibility is not authentication. Some WebView2 flows omit
+        // LOGIN_INFO or third-party variants; the account-menu verifier remains
+        // authoritative and nothing is activated/persisted before it succeeds.
+        if ["SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID"]
+            .iter()
+            .all(|name| result.cookie_value(name).is_none())
         {
             return Err(session_error());
         }
@@ -660,6 +661,27 @@ mod tests {
             .collect(),
         )
         .unwrap()
+    }
+    #[test]
+    fn browser_auth_candidates_do_not_require_a_login_info_cookie() {
+        for name in ["SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID"] {
+            let mut cookies = session().browser_cookies();
+            cookies.retain(|cookie| cookie.name == "SAPISID");
+            cookies[0].name = name.into();
+            assert!(
+                CookieSession::from_cookies(cookies).is_ok(),
+                "scoped auth cookie is only a candidate until server verification: {name}"
+            );
+        }
+        let mut google_only = session().browser_cookies();
+        for cookie in &mut google_only {
+            cookie.domain = ".google.com".into();
+        }
+        assert!(CookieSession::from_cookies(google_only).is_err());
+        let mut visitors = session().browser_cookies();
+        visitors.retain(|cookie| cookie.name == "SAPISID");
+        visitors[0].name = "VISITOR_INFO1_LIVE".into();
+        assert!(CookieSession::from_cookies(visitors).is_err());
     }
     #[tokio::test]
     async fn a_verified_session_survives_restart_until_explicit_sign_out() {

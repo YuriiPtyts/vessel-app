@@ -27,7 +27,7 @@ Palette tokens live in `src/lib/themes/duskfox.css`. Shared material/layout styl
 - Four Duskfox accent choices.
 - Independent Light/Dark buttons in Appearance and a sun/moon shortcut in the top bar.
 - Live glass-tint adjustment from 50–100%, default 50%. It changes transparency only, not the selected light/dark material.
-- Glyph-only contrast at high transparency: slightly stronger dark letters in light mode; white fill with a thin black edge in dark mode. Surface and icon colors do not change with this treatment.
+- Text-only contrast at high transparency: stronger filled letters and a dark-mode shadow, with no text stroke that can thin the centers. Surface and icon colors stay fixed.
 - Reduced-transparency mode that removes native vibrancy and CSS backdrop filters.
 - Comfortable/compact song rows.
 - Expanded/compact navigation.

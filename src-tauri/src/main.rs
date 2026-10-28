@@ -57,14 +57,14 @@ fn vessel_diagnostic_error() -> vessel_app::error::AppError {
 }
 
 #[tauri::command]
-fn windows_smoke_probe(
+async fn windows_smoke_probe(
     window: tauri::WebviewWindow,
     state: AppState<'_>,
     probe: serde_json::Value,
 ) -> Result<()> {
     #[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
     {
-        windows_diagnostics::report(window, &state, probe)
+        windows_diagnostics::report(window, state.inner().clone(), probe).await
     }
     #[cfg(not(all(target_os = "windows", feature = "native-diagnostics")))]
     {
@@ -199,7 +199,33 @@ async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Resul
             )
         })?;
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::window::{Color, Effect, EffectsBuilder};
+        window
+            .set_background_color(Some(Color(0, 0, 0, 0)))
+            .map_err(|_| {
+                vessel_app::error::AppError::new(
+                    "material_unavailable",
+                    "The Windows webview background could not be made transparent.",
+                    true,
+                )
+            })?;
+        let effects = if reduced {
+            None
+        } else {
+            Some(
+                EffectsBuilder::new()
+                    .effect(Effect::Acrylic)
+                    .color(Color(0, 0, 0, 1))
+                    .build(),
+            )
+        };
+        window.set_effects(effects).map_err(|_| {
+            vessel_app::error::AppError::new("material_unavailable", "The Windows backdrop could not be changed. Check Windows transparency effects and try again.", true)
+        })?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = (window, reduced);
     Ok(())
 }
@@ -545,6 +571,34 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_main_window_requests_a_transparent_webview_and_native_backdrop() {
+        let base: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.windows.conf.json")).unwrap();
+        let window = windows
+            .pointer("/app/windows/0")
+            .unwrap_or(&base["app"]["windows"][0]);
+        let mut merged = base.clone();
+        merged["app"]["windows"] = windows["app"]["windows"].clone();
+        let _: tauri::Config = serde_json::from_value(merged)
+            .expect("Windows override must deserialize as real Tauri configuration");
+        assert_eq!(
+            window
+                .get("transparent")
+                .and_then(serde_json::Value::as_bool),
+            Some(true),
+            "CSS alpha cannot reveal the desktop through an opaque native window"
+        );
+        assert_eq!(window["backgroundColor"], "#00000000");
+        assert!(
+            window
+                .pointer("/windowEffects/effects")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|effects| effects.iter().any(|effect| effect == "acrylic"))
+        );
+    }
     #[test]
     fn remote_windows_and_remote_navigation_cannot_invoke_app_commands() {
         assert!(trusted_caller(

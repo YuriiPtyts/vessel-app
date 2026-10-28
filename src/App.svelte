@@ -711,6 +711,7 @@
 <div
   use:unifiedMaterial
   class="app-frame accent-{appearance.accent}"
+  aria-busy={checking}
   class:opaque={usesOpaqueMaterial(appearance)}
   class:light-glass={usesLightGlass(appearance)}
   class:contrast-ink={!usesOpaqueMaterial(appearance) && appearance.glassOpacity < 70}

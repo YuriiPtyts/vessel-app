@@ -8,7 +8,10 @@ use std::{
 use tokio::sync::{Mutex as AsyncMutex, Semaphore, watch};
 
 use crate::{
-    account::{Account, AccountMode, AccountSnapshot, CookieSession, MemoryVault, SessionVault},
+    account::{
+        Account, AccountMode, AccountProfile, AccountSnapshot, CookieSession, MemoryVault,
+        SessionVault,
+    },
     account_library::{AccountLibrary, AccountLibrarySnapshot},
     catalog::{MusicCatalog, SearchKind, SearchResults},
     error::{AppError, Result},
@@ -758,16 +761,12 @@ impl Application {
         &self,
         id: u64,
         session: CookieSession,
+        profile: AccountProfile,
     ) -> Result<AccountSnapshot> {
-        let result = async {
-            let profile = self.catalog.verify_account(&session).await?;
-            self.account.activate(id, session, profile, true).await
-        }
-        .await;
-        if let Err(error) = &result {
-            self.account.fail(id, error.clone());
-        }
-        result
+        self.account.activate(id, session, profile, true).await
+    }
+    pub(crate) async fn verify_sign_in(&self, session: &CookieSession) -> Result<AccountProfile> {
+        self.catalog.verify_account(session).await
     }
     pub async fn sign_out(&self) -> Result<AccountSnapshot> {
         let snapshot = self.account.sign_out().await?;
