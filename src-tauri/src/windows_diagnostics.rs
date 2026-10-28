@@ -11,7 +11,7 @@ use windows::core::Interface;
 
 static OPAQUE_BACKDROP_REMOVED: AtomicBool = AtomicBool::new(false);
 
-async fn material_state(window: &tauri::WebviewWindow) -> Option<(u8, u32)> {
+async fn material_state(window: &tauri::WebviewWindow) -> Option<(u8, u32, bool)> {
     let copy = window.clone();
     let (send, receive) = tokio::sync::oneshot::channel();
     window
@@ -34,7 +34,8 @@ async fn material_state(window: &tauri::WebviewWindow) -> Option<(u8, u32)> {
                         (&mut backdrop as *mut u32).cast(),
                         std::mem::size_of::<u32>() as u32,
                     );
-                    (result >= 0).then_some((color.A, backdrop))
+                    // SMTC ownership is UI-thread-local, just like the controller.
+                    (result >= 0).then_some((color.A, backdrop, crate::media_controls::available()))
                 })
             };
             let _ = send.send(state);
@@ -58,19 +59,24 @@ pub async fn report(
     let available = app.runtime_available();
     let material = material_state(&window).await;
     if probe.get("phase").and_then(Value::as_str) == Some("opaque") {
-        OPAQUE_BACKDROP_REMOVED.store(material == Some((0, 1)), Ordering::SeqCst);
+        OPAQUE_BACKDROP_REMOVED.store(
+            material.is_some_and(|(alpha, kind, _)| alpha == 0 && kind == 1),
+            Ordering::SeqCst,
+        );
         return Ok(());
     }
     let sign_in = vessel_app::sign_in::windows_handoff_smoke(window.app_handle().clone(), app)
         .await
         .unwrap_or_else(|error| json!({"passed":false,"error":error.code}));
     let hwnd = window.hwnd().is_ok();
-    let transparent = material.is_some_and(|(alpha, _)| alpha == 0);
-    let backdrop = material.is_some_and(|(_, kind)| kind == 3);
+    let transparent = material.is_some_and(|(alpha, _, _)| alpha == 0);
+    let backdrop = material.is_some_and(|(_, kind, _)| kind == 3);
+    let media_controls = material.is_some_and(|(_, _, available)| available);
     let opaque = OPAQUE_BACKDROP_REMOVED.load(Ordering::SeqCst);
     let passed = mounted
         && player
         && available
+        && media_controls
         && hwnd
         && transparent
         && backdrop
@@ -81,7 +87,7 @@ pub async fn report(
     let report = json!({
         "passed": passed, "webview2Mounted": mounted, "playerPresent": player,
         "nativeIpc": true, "runtimeAvailable": available, "windowHandle": hwnd,
-        "mediaControlsAvailable": crate::media_controls::available(),
+        "mediaControlsAvailable": media_controls,
         "transparentWebview": transparent, "nativeAcrylicBackdrop": backdrop,
         "opaqueBackdropRemoved": opaque, "signInHandoff": sign_in,
         "cleanDarkText": probe.get("cleanDarkText").and_then(Value::as_bool) == Some(true),

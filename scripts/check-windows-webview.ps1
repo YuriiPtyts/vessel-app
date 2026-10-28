@@ -10,7 +10,7 @@ try {
   if (-not $process.WaitForExit(45000)) { $process.Kill($true); throw 'Windows WebView2 smoke test timed out.' }
   if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Windows WebView2 smoke test failed before reporting.' }
   $result = Get-Content $report -Raw | ConvertFrom-Json
-  if (-not $result.passed -or -not $result.nativeIpc -or -not $result.webview2Mounted -or -not $result.runtimeAvailable) { throw 'Windows WebView2/native IPC contract failed.' }
+  if (-not $result.passed -or -not $result.nativeIpc -or -not $result.webview2Mounted -or -not $result.runtimeAvailable -or -not $result.mediaControlsAvailable) { throw 'Windows WebView2/native IPC/media-control contract failed.' }
   if (-not $result.transparentWebview -or -not $result.nativeAcrylicBackdrop -or -not $result.opaqueBackdropRemoved -or -not $result.cleanDarkText -or -not $result.signInHandoff.passed) { throw 'Windows transparency, text, or cookie-handoff contract failed.' }
   $result | ConvertTo-Json
 } finally {
