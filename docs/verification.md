@@ -260,6 +260,12 @@ Real Google password/2FA and a real account's server-side acceptance after resta
 - Normal macOS app compilation succeeds. Packaging verifies **107** code objects, ZIP extraction and DMG-mounted app seals, image integrity, and the Applications shortcut. The DMG is **76,458,572 bytes**; ZIP **75,369,270 bytes**. Both checksums pass. Packaging now selects declared runtime inputs and provenance files after an identical undeclared `libmpv 2.dylib` duplicate was found in the generated runtime folder; source files are retained and the duplicate is excluded from the release payload.
 - Playback/provider code is unchanged for this appearance fix. Native material/signing and physical-device verification retain the earlier limits; the beta remains ad-hoc signed on macOS and unsigned on Windows. Build outputs, cached runtimes, and contrast screenshots are excluded from commits.
 
+### Beta.4 packaged/native follow-up
+
+- The extracted normal macOS app launches for eight seconds with system-only PATH and quits normally (`exit 0`, 293 captured output bytes).
+- [Windows CI run **40619153912**](https://github.com/YuriiPtyts/vessel-app/actions/runs/40619153912), built from `76ce582`, is green: frontend checks/build, Rust fmt/Clippy, **35 library tests** plus IPC/non-network integration, actual WebView2/player/native IPC and SMTC availability, production NSIS packaging, installed-runtime/PCM-null-output/volume tests, normal installed window launch/quit, and uninstall. The downloaded Windows setup is **85,026,440 bytes** and passes its SHA-256 sidecar.
+- A separate beta.3 rerun had passed all installed-app checks but raced NSIS's asynchronous file deletion during fixture cleanup. The Windows fixture now waits for application removal and retries only its own unique temporary-directory cleanup, with bounded deadlines. The corrected fixture passes in the beta.4 run. This is test-harness synchronization; no end-user installer workaround is required.
+
 ## Repository state
 
 Local Git uses branch `main`. The private repository https://github.com/YuriiPtyts/vessel-app is connected as `origin`; private visibility has been verified. The owner now requests an automatic focused commit and push after each completed, verified change. Native binaries, download caches, credentials, and generated build/test artifacts are excluded from version control. Never change repository visibility without the owner's explicit instruction.

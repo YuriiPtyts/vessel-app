@@ -34,3 +34,7 @@ The null-output decode check does not certify WASAPI on physical speakers, audib
 [Native Windows CI run 40607451788](https://github.com/YuriiPtyts/vessel-app/actions/runs/40607451788) completed successfully on Windows Server 2025 x64. It passed 35 library tests plus the IPC-origin and non-network integration checks, including real DPAPI round-trip/corruption preservation and job-object cleanup. Actual WebView2/native IPC and SMTC availability were confirmed. Silent install, installed extractor/Deno execution, installed DLL null-output decoding/volume, an eight-second normal app launch, normal close, and silent uninstall passed.
 
 The downloaded installer is **85,032,286 bytes**, and its SHA-256 matches `SHA256SUMS-Windows`. It is unsigned. The run used fixture/local audio and no real account credentials; the hardware/provider limits above still apply.
+
+### Beta.4 readability update
+
+[Native Windows CI run 40619153912](https://github.com/YuriiPtyts/vessel-app/actions/runs/40619153912) passes the same native verification for the glass-readability build, including actual WebView2/IPC/SMTC, installed-runtime checks, normal app close, and uninstall. The Windows setup is **85,026,440 bytes** with a verified `SHA256SUMS-Windows` sidecar. The installer fixture now synchronizes with NSIS's asynchronous cleanup; the physical-audio/account scope is unchanged.
