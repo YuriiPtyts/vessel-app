@@ -73,7 +73,9 @@ test('Appearance and Queue share one window material with readable text and opaq
     expect(tracks.length).toBeGreaterThan(5);
     expect(tracks.filter((sample) => sample.ratio + 0.01 < sample.minimum)).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath(`queue-${tint}-${reduced}.png`) });
-    const filter = await queue.evaluate((node) => getComputedStyle(node, '::before').backdropFilter);
+    const filter = await queue.evaluate(
+      (node) => getComputedStyle(node, '::before').backdropFilter,
+    );
     if (alpha === 1) {
       expect(filter).toBe('none');
     } else {

@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It describes **Vessel 0.1.0-beta.6**, published on **October 28, 2026**. Test results and download sizes below belong to that version. They are a record of what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.7** on **October 28, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -61,6 +61,7 @@ The project grew in working stages. We tested individual pieces before adding mo
 | Windows support                    | Windows playback dependencies, protected account storage, media controls, and an installer.                             | Reused the shared app while adding the Windows-specific pieces.                                         |
 | Readable glass                     | Better text contrast and Appearance/Queue panels that follow the same transparency setting.                             | Kept the glass look without making text hard to read.                                                   |
 | Account library, beta.6            | Account likes, like/unlike requests, saved sidebar playlists, refresh, and protection from old account replies.         | Connected the collection views to YouTube Music while preserving local favorites.                       |
+| Sidebar and shared glass, beta.7   | A separate scrolling playlist area, one transparency level, and text that changes between dark and light.               | Keeps Appearance reachable and removes the dark reading blocks that made the glass look uneven.         |
 
 The [Git history](https://github.com/YuriiPtyts/vessel-app/commits/main/) records these changes. The [verification log](verification.md) records what was actually tested at each stage.
 
@@ -208,7 +209,7 @@ This gives us a fallback for more complicated sources, but it can be slower and 
 | **Tailwind CSS 4 + ordinary CSS files**               | The frontend styling setup. Much of Vessel's appearance lives in named CSS rules. | Flexible styling and build tooling; web-engine compatibility and interactions between rules still need testing.                                               |
 | **Lucide**                                            | Interface icons.                                                                  | Consistent icons without drawing each one; icons still need clear labels and useful button behavior.                                                          |
 | **Cargo**                                             | Rust dependencies, compilation, and tests.                                        | One standard workflow; compiling native dependencies can be slow.                                                                                             |
-| **Playwright**                                        | Automated interface tests, currently using WebKit.                                | Can check real rendered pages and clicks; simulated native replies do not prove that Google or native audio works.                                            |
+| **Playwright**                                        | Automated interface tests using WebKit, plus focused Chromium checks.             | Can check real rendered pages and clicks; simulated native replies do not prove that Google or native audio works.                                            |
 | **Prettier, rustfmt, Clippy**                         | Consistent formatting and checks for likely mistakes.                             | Make changes easier to review; none replaces behavior tests or listening on real hardware.                                                                    |
 | **Git + private GitHub releases/Actions**             | Change history, private downloads, and automated Windows builds.                  | Reproducible work and native Windows checks; downloads still need signing and real-machine testing.                                                           |
 
@@ -318,7 +319,9 @@ Sign-out forgets the stored Google session, clears the dedicated sign-in browser
 
 **Duskfox** is the default palette, based on the owner's preferred editor colors. Color roles are stored separately from layout rules so future themes can reuse the same interface.
 
-The glass tint ranges from 50% to 100%. At 100%, or when reduced transparency is enabled, the interface uses opaque surfaces. Text areas have extra contrast protection so bright or busy backgrounds do not make labels unreadable. Appearance and Queue panels follow the shared tint live.
+The glass tint ranges from 50% to 100%. At 50–69%, light glass uses dark text. At 70–100%, Duskfox's dark glass uses light text. All the main areas use the same transparency, including floating panels; the background underneath them is not painted again and made darker. At 100%, or with reduced transparency, the material is solid. This replaces the earlier extra dark patches behind text.
+
+Saved playlists now scroll in their own sidebar area. The main navigation and Appearance/Account controls stay in place, even with a long playlist list.
 
 On supported macOS versions, the window uses Apple's native clear-glass effect, with a fallback on older systems. This is separate from CSS styling inside the page. Windows shares the interface and preferences but does not gain Apple's native glass effect.
 
@@ -336,7 +339,7 @@ The first packaged extractor could take roughly 7–8 seconds just to start and 
 
 We changed the macOS extractor to a reusable directory layout, added bounded source reuse, prepared the engine in the background, and added a direct guest lookup in Rust. More difficult requests still use the extractor fallback.
 
-Some earlier warmed direct-path tests reached decoded output in under a second. The latest beta.6 guest catalog test took **3.060 seconds**, with **0.889 seconds** for a cached repeat. These are different individual test runs, not a guaranteed speed or a measurement of audible sound reaching headphones.
+Some earlier warmed direct-path tests reached decoded output in under a second. The beta.6 guest catalog test took **3.060 seconds**, with **0.889 seconds** for a cached repeat. These are different individual test runs, not a guaranteed speed or a measurement of audible sound reaching headphones.
 
 The trade-off is more than one source-lookup path to maintain, plus some memory kept ready to reduce waiting.
 
@@ -383,12 +386,12 @@ We use different tests for different questions. One type cannot stand in for all
 | Live guest tests                | Real provider search, browsing, source resolution, and native decoding work in the tested run.                                        | Premium behavior, every region/song, or subjective sound quality.                  |
 | Native/package tests            | Real windows, protected storage fixtures, installed dependencies, package integrity, and launch/quit work in the checked environment. | Every OS version, real media-key delivery, or physical speaker/headphone behavior. |
 
-For beta.6, the recorded checks include:
+For beta.7, the recorded checks include:
 
-- **30 WebKit interface tests.**
+- **35 WebKit interface tests and 11 focused Chromium tests.** The shared material and text contrast are checked over bright, dark, and patterned backgrounds; the sidebar check uses 80 playlists and real wheel scrolling.
 - **44 ordinary Rust library tests on macOS** and **46 on Windows**, plus the command-origin and non-network integration checks.
 - Successful frontend checks/builds, Rust formatting, and Clippy checks.
-- Live guest search, pagination, recommended collection browsing, and muted native playback.
+- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.7 native-window check loaded three live Home shelves.
 - macOS ZIP/DMG integrity, 107 signatures, and an eight-second extracted-app launch followed by normal quit.
 - Windows native WebView2, Rust command calls, media-control availability, installed-runtime decoding/volume, install, normal launch/quit, and uninstall.
 
@@ -439,7 +442,7 @@ The installed app includes the tools it needs. **The listener does not install P
 
 GitHub Actions builds and checks Windows on a real Windows runner. macOS builds and native checks have been run on the available Apple Silicon host. That is different from proving support on every declared minimum operating-system version.
 
-The [beta.6 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.6) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
+The [beta.7 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.7) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
 
 The repository contains the app source and build instructions. Large downloaded tools, built apps, caches, and test artifacts are generated separately and kept out of source commits.
 
@@ -482,7 +485,7 @@ Ideas such as saved listening spaces and sharing small listening collections are
 | Device likes and history                 | `library.rs`                                                                           |
 | Sign-in and account protection           | `account.rs`, `sign_in.rs`, and `account/windows_vault.rs`                             |
 | Account likes and playlists              | `account_library.rs` and its tests                                                     |
-| Appearance and readable glass            | `src/lib/appearance.ts`, `src/lib/themes/`, and the CSS files                          |
+| Appearance and readable glass            | `src/lib/appearance.ts`, `src/lib/material.ts`, `src/lib/themes/`, and the CSS files   |
 | Building and packaging                   | `scripts/`, the native dependency manifests, and `.github/workflows/windows-build.yml` |
 
 For the complete file tree, read the [project map](project-map.md). For the detailed design, read [architecture](architecture.md). For why the product took this direction, read [decisions](decisions.md). For test evidence and limitations, read [verification](verification.md). For installing the current beta, read [beta notes](beta-release.md).
