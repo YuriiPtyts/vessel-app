@@ -7,7 +7,7 @@ export async function renderedTextContrast(page, selectors) {
     const context = canvas.getContext('2d');
     const samples = [];
     let nextId = 0;
-    for (const { selector, minimum = 4.5, pseudo = null } of selectors) {
+    for (const { selector, minimum = 4.5, pseudo = null, includeDisabled = false } of selectors) {
       for (const node of document.querySelectorAll(selector)) {
         const box = node.getBoundingClientRect();
         if (
@@ -15,7 +15,7 @@ export async function renderedTextContrast(page, selectors) {
           box.height < 4 ||
           box.bottom <= 0 ||
           box.top >= innerHeight ||
-          node.closest('[disabled]')
+          (!includeDisabled && node.closest('[disabled]'))
         )
           continue;
         node.setAttribute('data-contrast-target', 'true');

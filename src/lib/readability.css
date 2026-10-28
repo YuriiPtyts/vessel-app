@@ -11,6 +11,54 @@
   --theme-error: var(--theme-glass-error);
 }
 
+.app-frame:not(.opaque) :is(.appearance-popover, .queue-popover) {
+  background: rgb(var(--theme-surface-rgb) / var(--glass-opacity));
+}
+
+/* Popover shells share the window tint; their reading groups keep the same
+   contrast floor as the main content without making the entire panel opaque. */
+.app-frame:not(.opaque)
+  :is(.appearance-popover, .queue-popover)
+  :is(
+    .popover-heading,
+    .appearance-section,
+    .appearance-option,
+    .reset-appearance,
+    .queue-seed,
+    .queue-error,
+    .queue-progress,
+    .queue-footer,
+    .queue-empty
+  ) {
+  position: relative;
+  isolation: isolate;
+}
+.app-frame:not(.opaque)
+  :is(.appearance-popover, .queue-popover)
+  :is(
+    .popover-heading,
+    .appearance-section,
+    .appearance-option,
+    .reset-appearance,
+    .queue-seed,
+    .queue-error,
+    .queue-progress,
+    .queue-footer,
+    .queue-empty
+  )::before {
+  content: '';
+  position: absolute;
+  inset: -5px -8px;
+  z-index: -1;
+  border-radius: 10px;
+  background: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
+  pointer-events: none;
+}
+.app-frame:not(.opaque) .queue-tracks {
+  background: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
+  border-radius: 10px;
+}
+
 .app-frame:not(.opaque)
   :is(.sidebar, .topbar, .now-playing-panel, .provider-shelf, .floating-player, .track-table) {
   background-color: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));

@@ -39,9 +39,11 @@ The **Duskfox** palette, derived from the owner's Zed theme, remains the default
 
 Local reading materials and semantic text contrast keep labels readable over bright/busy backgrounds while retaining the chosen window tint. The OS **Increase Contrast** preference strengthens these materials without changing saved preferences. See [glass readability and measurements](docs/glass-readability.md).
 
+The **Appearance** and **Queue** panel backgrounds follow the same tint live, with local contrast protection for their labels and controls. **100% tint** or **Reduce transparency** makes both panels opaque.
+
 ## Beta build
 
-The current development beta is **0.1.0-beta.4**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
+The current development beta is **0.1.0-beta.5**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
 
 To inspect resource use in Neohtop or Activity Monitor, launch the installed app and search for **`Vessel`**. Older builds and direct Cargo development runs use **`vessel-app`**. WebKit WebContent, networking, and GPU helpers can appear separately; the main process alone is not the app's whole resource footprint.
 

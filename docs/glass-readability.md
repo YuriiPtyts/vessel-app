@@ -13,6 +13,8 @@ The regression is `npm run test:ui -- --grep 'glass text contrast|glass controls
 3. **Tonal interaction states.** Nested card washes, selected search pills, and current/pending rows retain dark reading fields. Past queue items use artwork/color hierarchy instead of fading their text along with the whole row.
 4. **OS increased contrast.** `prefers-contrast: more` strengthens the reading material, text roles, and borders without rewriting stored appearance preferences. Existing reduced-transparency and 100% opaque modes continue to work.
 
+Appearance and Queue popover shells use the selected `--glass-opacity` directly. Their heading/control/text groups and queue list retain local reading materials, allowing the panel edges/gaps to follow transparency without washing out the content. Both shells become fully opaque when the shared opaque/reduced-transparency mode is active.
+
 Stable material behind text is the contrast guarantee. Text shadows or inversion alone cannot guarantee readable color pairs over arbitrary imagery, and runtime desktop capture is unnecessary. The implementation uses static CSS paints and a preference-derived alpha; it adds no background-sampling loop or new blur layer.
 
 ## Source map
