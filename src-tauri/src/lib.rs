@@ -6,6 +6,7 @@ mod direct;
 pub mod error;
 pub mod home;
 pub mod library;
+pub mod lyrics;
 mod mpv;
 pub mod playback;
 pub mod provider;

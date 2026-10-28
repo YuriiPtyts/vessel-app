@@ -329,6 +329,57 @@ impl Application {
             .set_like(&self.catalog, track, liked, revision)
             .await
     }
+    pub async fn create_account_playlist(
+        &self,
+        title: &str,
+        description: &str,
+        privacy: crate::account_library::PlaylistPrivacy,
+        video_id: Option<&str>,
+        revision: u64,
+    ) -> Result<crate::account_library::PlaylistMutation> {
+        self.account_library.check_revision(revision)?;
+        let track = video_id
+            .map(|id| {
+                self.find_track(id).ok_or_else(|| {
+                    AppError::new(
+                        "unknown_track",
+                        "Find this song again before adding it to a playlist.",
+                        true,
+                    )
+                })
+            })
+            .transpose()?;
+        self.account_library
+            .create_playlist(&self.catalog, title, description, privacy, track, revision)
+            .await
+    }
+    pub async fn add_to_account_playlist(
+        &self,
+        id: &str,
+        video_id: &str,
+        revision: u64,
+    ) -> Result<crate::account_library::PlaylistMutation> {
+        self.account_library.check_revision(revision)?;
+        let track = self.find_track(video_id).ok_or_else(|| {
+            AppError::new(
+                "unknown_track",
+                "Find this song again before adding it to a playlist.",
+                true,
+            )
+        })?;
+        self.account_library
+            .add_to_playlist(&self.catalog, id, track, revision)
+            .await
+    }
+    pub async fn song_lyrics(&self, id: &str) -> Result<crate::lyrics::SongLyrics> {
+        self.catalog.lyrics(id).await.map_err(|error| {
+            if matches!(error.code, "cancelled" | "session_expired") {
+                error
+            } else {
+                crate::lyrics::lyrics_error()
+            }
+        })
+    }
     fn find_track(&self, id: &str) -> Option<Track> {
         self.catalog
             .find_track(id)

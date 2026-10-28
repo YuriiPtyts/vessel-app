@@ -42,7 +42,7 @@
   font-weight: 600;
   text-shadow: var(--legible-text-shadow);
 }
-.app-frame.contrast-ink:not(.light-glass) :is(button, input, select),
+.app-frame.contrast-ink:not(.light-glass) :is(button, input, select, textarea),
 .app-frame.contrast-ink:not(.light-glass) input::placeholder {
   text-shadow: var(--legible-text-shadow);
 }
@@ -136,7 +136,14 @@
 .app-frame [data-material-overlay] > * {
   opacity: var(--reveal-content-opacity, 1);
 }
-.app-frame :is(.floating-player, .appearance-popover, .music-popover, .quality-popover)::before {
+.app-frame
+  :is(
+    .floating-player,
+    .appearance-popover,
+    .music-popover,
+    .quality-popover,
+    .feature-dialog
+  )::before {
   content: '';
   position: absolute;
   inset: 0;

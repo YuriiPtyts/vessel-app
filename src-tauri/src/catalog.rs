@@ -80,6 +80,8 @@ pub struct MusicCatalog {
     collection: Mutex<Option<CachedCollection>>,
     account: Arc<Account>,
     radio_slot: Semaphore,
+    lyrics_slot: Semaphore,
+    lyrics_cache: Mutex<VecDeque<crate::lyrics::CachedLyrics>>,
 }
 
 impl MusicCatalog {
@@ -109,6 +111,8 @@ impl MusicCatalog {
             collection: Mutex::new(None),
             account,
             radio_slot: Semaphore::new(1),
+            lyrics_slot: Semaphore::new(2),
+            lyrics_cache: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -132,6 +136,9 @@ impl MusicCatalog {
             *value = None;
         }
         if let Ok(mut value) = self.known_tracks.lock() {
+            value.clear();
+        }
+        if let Ok(mut value) = self.lyrics_cache.lock() {
             value.clear();
         }
     }
@@ -683,14 +690,87 @@ impl MusicCatalog {
         crate::account_library::validate_rating_response(&data)
     }
 
-    async fn account_post(
+    pub(crate) async fn lyrics(&self, id: &str) -> Result<crate::lyrics::SongLyrics> {
+        use crate::lyrics::{CachedLyrics, SongLyrics, lyrics_error};
+        if !valid_video_id(id) {
+            return Err(lyrics_error());
+        }
+        let revision = self.account.snapshot().revision;
+        let _slot = self
+            .lyrics_slot
+            .acquire()
+            .await
+            .map_err(|_| AppError::internal())?;
+        if let Some(cached) = self
+            .lyrics_cache
+            .lock()
+            .map_err(|_| AppError::internal())?
+            .iter()
+            .find(|cached| {
+                cached.revision == revision
+                    && cached.lyrics.video_id == id
+                    && cached.created.elapsed() < Duration::from_secs(300)
+            })
+        {
+            return Ok(cached.lyrics.clone());
+        }
+        // This lane does not cancel searches, browsing, radio, or playback.
+        let next = self
+            .post(
+                "next",
+                json!({"videoId":id,"isAudioOnly":true,"enablePersistentPlaylistPanel":true}),
+                None,
+                revision,
+            )
+            .await?;
+        let result = if let Some(browse_id) = crate::lyrics::lyrics_target(&next)? {
+            let data = self
+                .post("browse", json!({"browseId":browse_id}), None, revision)
+                .await?;
+            crate::lyrics::parse_lyrics(id, &data)?
+        } else {
+            SongLyrics {
+                video_id: id.into(),
+                text: None,
+                source: None,
+            }
+        };
+        if self.account.snapshot().revision != revision {
+            return Err(AppError::cancelled());
+        }
+        let mut cache = self.lyrics_cache.lock().map_err(|_| AppError::internal())?;
+        cache.retain(|cached| cached.lyrics.video_id != id || cached.revision != revision);
+        cache.push_front(CachedLyrics {
+            lyrics: result.clone(),
+            revision,
+            created: Instant::now(),
+        });
+        cache.truncate(16);
+        Ok(result)
+    }
+
+    pub(crate) async fn account_post(
+        &self,
+        endpoint: &str,
+        body: Value,
+        continuation: Option<&str>,
+        expected_revision: u64,
+    ) -> Result<Value> {
+        self.require_account(expected_revision)?;
+        let data = self
+            .post(endpoint, body, continuation, expected_revision)
+            .await?;
+        self.require_account(expected_revision)?;
+        Ok(data)
+    }
+
+    async fn post(
         &self,
         endpoint: &str,
         mut body: Value,
         continuation: Option<&str>,
         expected_revision: u64,
     ) -> Result<Value> {
-        self.require_account(expected_revision)?;
         let (context, revision) = self.context().await?;
         if revision != expected_revision {
             return Err(AppError::cancelled());
@@ -719,14 +799,12 @@ impl MusicCatalog {
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
             .json(&body);
-        let session = self.require_account(expected_revision)?;
-        let response = session
-            .request_headers(request)?
+        let response = self
+            .authenticate(request, expected_revision)?
             .send()
             .await
             .map_err(|_| crate::account_library::library_error())?;
         let data = self.response(response, expected_revision).await?;
-        self.require_account(expected_revision)?;
         Ok(data)
     }
 

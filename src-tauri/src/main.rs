@@ -176,6 +176,46 @@ async fn account_playlist(
 }
 
 #[tauri::command]
+async fn create_account_playlist(
+    state: AppState<'_>,
+    title: String,
+    description: String,
+    privacy: vessel_app::account_library::PlaylistPrivacy,
+    video_id: Option<String>,
+    account_revision: u64,
+) -> Result<vessel_app::account_library::PlaylistMutation> {
+    state
+        .create_account_playlist(
+            &title,
+            &description,
+            privacy,
+            video_id.as_deref(),
+            account_revision,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn add_to_account_playlist(
+    state: AppState<'_>,
+    id: String,
+    video_id: String,
+    account_revision: u64,
+) -> Result<vessel_app::account_library::PlaylistMutation> {
+    state
+        .add_to_account_playlist(&id, &video_id, account_revision)
+        .await
+}
+
+#[tauri::command]
+async fn song_lyrics(
+    state: AppState<'_>,
+    video_id: String,
+) -> Result<vessel_app::lyrics::SongLyrics> {
+    state.song_lyrics(&video_id).await
+}
+
+#[tauri::command]
 async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -514,6 +554,9 @@ fn main() {
                 refresh_account_library,
                 set_account_like,
                 account_playlist,
+                create_account_playlist,
+                add_to_account_playlist,
+                song_lyrics,
                 set_material_mode,
                 inspect_track,
                 cancel_inspection,

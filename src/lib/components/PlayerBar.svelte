@@ -7,6 +7,8 @@
     Heart,
     LoaderCircle,
     ListMusic,
+    ListPlus,
+    TextQuote,
     Pause,
     Play,
     SkipBack,
@@ -52,6 +54,9 @@
     artworkVisible,
     queueOpen,
     onqueue,
+    onlyrics,
+    onplaylist,
+    lyricsOpen,
   }: {
     playback: PlaybackSnapshot;
     pending: Track | null;
@@ -77,6 +82,9 @@
     artworkVisible: boolean;
     queueOpen: boolean;
     onqueue: () => void;
+    onlyrics: () => void;
+    onplaylist: () => void;
+    lyricsOpen: boolean;
   } = $props();
   let seekDraft = $state<number | null>(null);
   let volumeDraft = $state<number | null>(null);
@@ -304,6 +312,16 @@
       {/if}
     </div>
     <button
+      class="icon-button player-playlist"
+      aria-label="Add current song to playlist"
+      title="Add to playlist"
+      disabled={!playback.track || Boolean(pending)}
+      onclick={(event) => {
+        event.currentTarget.focus();
+        onplaylist();
+      }}><ListPlus size={16} /></button
+    >
+    <button
       class="icon-button queue-trigger"
       data-popover-trigger="queue"
       class:selected={queueOpen}
@@ -311,6 +329,17 @@
       aria-expanded={queueOpen}
       title="Up next and autoplay radio"
       onclick={onqueue}><ListMusic size={17} /></button
+    >
+    <button
+      class="icon-button lyrics-trigger"
+      aria-label="Show lyrics"
+      title="Lyrics"
+      aria-expanded={lyricsOpen}
+      disabled={!playback.track || Boolean(pending)}
+      onclick={(event) => {
+        event.currentTarget.focus();
+        onlyrics();
+      }}><TextQuote size={17} /></button
     >
     <button
       class="icon-button stop-button"

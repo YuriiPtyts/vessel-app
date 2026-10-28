@@ -16,6 +16,10 @@ use std::{
 };
 use tokio::sync::{Mutex as AsyncMutex, watch};
 
+#[path = "playlist_writes.rs"]
+mod playlist_writes;
+pub use playlist_writes::{PlaylistMutation, PlaylistPrivacy};
+
 const MAX_LIKES: usize = 10_000;
 const MAX_PLAYLISTS: usize = 1_000;
 const MAX_PAGES: usize = 200;
@@ -32,6 +36,7 @@ pub struct AccountLibrarySnapshot {
     pub liked: Vec<Track>,
     pub liked_ids: Vec<String>,
     pub playlists: Vec<HomeItem>,
+    pub editable_playlist_ids: Vec<String>,
     pub likes_error: Option<AppError>,
     pub playlists_error: Option<AppError>,
 }
@@ -48,6 +53,7 @@ impl AccountLibrarySnapshot {
             liked: Vec::new(),
             liked_ids: Vec::new(),
             playlists: Vec::new(),
+            editable_playlist_ids: Vec::new(),
             likes_error: None,
             playlists_error: None,
         }
@@ -251,13 +257,14 @@ impl AccountLibrary {
                     Err(error) => state.public.likes_error = Some(error),
                 }
                 match playlists {
-                    Ok((items, targets)) => {
+                    Ok((items, targets, editable)) => {
                         if state.collection.as_ref().is_some_and(|collection| {
                             !targets.contains_key(&collection.page.item.id)
                         }) {
                             state.collection = None;
                         }
                         state.public.playlists = items;
+                        state.public.editable_playlist_ids = editable.into_iter().collect();
                         state.targets = targets;
                         state.public.playlists_ready = true;
                     }
@@ -439,11 +446,16 @@ async fn fetch_likes(
 async fn fetch_playlists(
     catalog: &MusicCatalog,
     revision: u64,
-) -> Result<(Vec<HomeItem>, BTreeMap<String, CollectionTarget>)> {
+) -> Result<(
+    Vec<HomeItem>,
+    BTreeMap<String, CollectionTarget>,
+    BTreeSet<String>,
+)> {
     let operation = async {
         let mut items = Vec::new();
         let mut targets = BTreeMap::new();
         let mut ids = BTreeSet::new();
+        let mut editable = BTreeSet::new();
         let mut cursor = None;
         let mut seen = BTreeSet::new();
         for _ in 0..MAX_PAGES {
@@ -451,6 +463,7 @@ async fn fetch_playlists(
                 .account_browse("FEmusic_liked_playlists", cursor.as_ref(), revision)
                 .await?;
             let page = parse_playlists_page(&data)?;
+            editable.extend(page.editable);
             for target in page.targets {
                 if ids.insert(target.item.id.clone()) {
                     items.push(target.item.clone());
@@ -462,7 +475,7 @@ async fn fetch_playlists(
             }
             cursor = page.cursor;
             let Some(next) = &cursor else {
-                return Ok((items, targets));
+                return Ok((items, targets, editable));
             };
             if !seen.insert(next.token.clone()) {
                 return Err(library_error());
@@ -482,6 +495,7 @@ pub(crate) struct LikedPage {
 }
 struct PlaylistsPage {
     targets: Vec<CollectionTarget>,
+    editable: BTreeSet<String>,
     cursor: Option<BrowseCursor>,
 }
 
@@ -603,6 +617,7 @@ fn parse_playlists_page(data: &Value) -> Result<PlaylistsPage> {
     let mut targets = BTreeMap::new();
     let mut order = Vec::new();
     let mut ids = BTreeSet::new();
+    let mut editable = BTreeSet::new();
     walk(root, &mut |value| {
         if let Some(row) = value.get("musicTwoRowItemRenderer") {
             let item = crate::home::parse_card(row, &mut targets);
@@ -612,11 +627,21 @@ fn parse_playlists_page(data: &Value) -> Result<PlaylistsPage> {
                     && item.id != "VLLM"
             }) && ids.insert(item.id.clone())
             {
+                walk(row.get("menu").unwrap_or(&Value::Null), &mut |value| {
+                    if value
+                        .pointer("/playlistEditorEndpoint/playlistId")
+                        .and_then(Value::as_str)
+                        == item.id.strip_prefix("VL")
+                    {
+                        editable.insert(item.id.clone());
+                    }
+                });
                 order.push(item.id);
             }
         }
     });
     Ok(PlaylistsPage {
+        editable,
         targets: order
             .into_iter()
             .filter_map(|id| targets.remove(&id))
@@ -629,7 +654,29 @@ pub(crate) fn parse_saved_collection(
     data: &Value,
     target: &CollectionTarget,
 ) -> Result<(CollectionPage, Option<BrowseCursor>)> {
-    let page = parse_liked_page(data)?;
+    let page = parse_liked_page(data).or_else(|error| {
+        // Empty owned playlists may have a shelf with no `contents` key.
+        // Unknown payloads still fail instead of erasing a collection.
+        let mut empty_shelf = false;
+        walk(data.get("contents").unwrap_or(&Value::Null), &mut |value| {
+            if let Some(shelf) = value
+                .get("musicPlaylistShelfRenderer")
+                .and_then(Value::as_object)
+            {
+                empty_shelf |=
+                    !shelf.contains_key("contents") && !shelf.contains_key("continuations");
+            }
+        });
+        if empty_shelf {
+            Ok(LikedPage {
+                tracks: Vec::new(),
+                ids: BTreeSet::new(),
+                cursor: None,
+            })
+        } else {
+            Err(error)
+        }
+    })?;
     Ok((
         CollectionPage {
             item: target.item.clone(),

@@ -71,6 +71,7 @@ export interface AccountLibrarySnapshot {
   liked: Track[];
   likedIds: string[];
   playlists: HomeItem[];
+  editablePlaylistIds: string[];
   likesError: AppError | null;
   playlistsError: AppError | null;
 }
@@ -84,6 +85,7 @@ export const emptyAccountLibrary = (accountRevision = 0): AccountLibrarySnapshot
   liked: [],
   likedIds: [],
   playlists: [],
+  editablePlaylistIds: [],
   likesError: null,
   playlistsError: null,
 });
@@ -192,6 +194,33 @@ export const setAccountLike = (videoId: string, liked: boolean, accountRevision:
   invoke<AccountLibrarySnapshot>('set_account_like', { videoId, liked, accountRevision });
 export const browseAccountPlaylist = (id: string, accountRevision: number, more = false) =>
   invoke<CollectionPage>('account_playlist', { id, accountRevision, more });
+export type PlaylistPrivacy = 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
+export interface PlaylistMutation {
+  playlist: HomeItem;
+  library: AccountLibrarySnapshot;
+}
+export interface SongLyrics {
+  videoId: string;
+  text: string | null;
+  source: string | null;
+}
+export const createAccountPlaylist = (
+  title: string,
+  description: string,
+  privacy: PlaylistPrivacy,
+  videoId: string | null,
+  accountRevision: number,
+) =>
+  invoke<PlaylistMutation>('create_account_playlist', {
+    title,
+    description,
+    privacy,
+    videoId,
+    accountRevision,
+  });
+export const addToAccountPlaylist = (id: string, videoId: string, accountRevision: number) =>
+  invoke<PlaylistMutation>('add_to_account_playlist', { id, videoId, accountRevision });
+export const getSongLyrics = (videoId: string) => invoke<SongLyrics>('song_lyrics', { videoId });
 export const onAccountLibrary = (callback: (snapshot: AccountLibrarySnapshot) => void) =>
   listen<AccountLibrarySnapshot>('account-library-state', ({ payload }) => callback(payload));
 export const setMaterialMode = (reduced: boolean) => invoke<void>('set_material_mode', { reduced });

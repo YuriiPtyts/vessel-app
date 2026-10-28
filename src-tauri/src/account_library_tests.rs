@@ -506,3 +506,278 @@ fn rating_dialogs_and_error_statuses_are_not_successful_writes() {
             .is_ok()
     );
 }
+
+#[tokio::test]
+async fn playlist_creation_and_additions_are_authenticated_acknowledged_and_owned() {
+    let account = account().await;
+    let server = Server::new(|request| {
+        assert!(request.authenticated);
+        match request.url.path() {
+            "/youtubei/v1/playlist/create" => {
+                assert_eq!(request.body["title"], "Evening");
+                assert_eq!(request.body["privacyStatus"], "PRIVATE");
+                assert_eq!(request.body["videoIds"], json!([A]));
+                (200, json!({"responseContext":{},"playlistId":"PLcreated"}))
+            }
+            "/youtubei/v1/browse/edit_playlist" => {
+                assert_eq!(request.body["playlistId"], "PLowned");
+                assert_eq!(
+                    request.body["actions"],
+                    json!([{"action":"ACTION_ADD_VIDEO","addedVideoId":A}])
+                );
+                (
+                    200,
+                    json!({"responseContext":{},"status":"STATUS_SUCCEEDED"}),
+                )
+            }
+            _ if request.body["browseId"] == "FEmusic_liked_playlists" => {
+                let mut owned = playlist("VLPLowned");
+                owned["musicTwoRowItemRenderer"]["menu"] = json!({"menuRenderer":{"items":[{"menuNavigationItemRenderer":{"navigationEndpoint":{"playlistEditorEndpoint":{"playlistId":"PLowned"}}}}]}});
+                (
+                    200,
+                    json!({"contents":{"gridRenderer":{"items":[owned,playlist("VLPLsaved")]}}}),
+                )
+            }
+            _ => normal(request),
+        }
+    });
+    let catalog = MusicCatalog::with_account_test_server(account.clone(), server.origin.clone());
+    let library = AccountLibrary::new(account.clone(), Arc::new(|_| {}));
+    let revision = account.snapshot().revision;
+    let snapshot = library.refresh(&catalog, true, revision).await.unwrap();
+    assert_eq!(snapshot.editable_playlist_ids, ["VLPLowned"]);
+    let track = snapshot.liked[0].clone();
+    let created = library
+        .create_playlist(
+            &catalog,
+            " Evening ",
+            "",
+            PlaylistPrivacy::Private,
+            Some(track.clone()),
+            revision,
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.playlist.id, "VLPLcreated");
+    assert!(
+        created
+            .library
+            .editable_playlist_ids
+            .contains(&created.playlist.id)
+    );
+    let target = library.target("VLPLcreated", revision).unwrap();
+    assert_eq!(target.item.title, "Evening");
+    let empty = parse_saved_collection(
+        &json!({"contents":{"musicPlaylistShelfRenderer":{}}}),
+        &target,
+    )
+    .unwrap()
+    .0;
+    assert!(empty.tracks.is_empty() && !empty.has_more);
+    assert!(parse_saved_collection(&json!({"contents":{}}), &target).is_err());
+    assert_eq!(
+        library
+            .add_to_playlist(&catalog, "VLPLsaved", track.clone(), revision)
+            .await
+            .unwrap_err()
+            .code,
+        "playlist_read_only"
+    );
+    assert!(
+        library
+            .add_to_playlist(&catalog, "VLPLowned", track, revision)
+            .await
+            .is_ok()
+    );
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path().contains("edit_playlist"))
+            .count(),
+        1
+    );
+    assert!(
+        !serde_json::to_string(&created)
+            .unwrap()
+            .contains("private-params")
+    );
+}
+
+#[tokio::test]
+async fn playlist_writes_reject_bad_names_guests_and_unconfirmed_responses_without_retry() {
+    for response in [
+        json!({}),
+        json!({"responseContext":{},"playlistId":"../../bad"}),
+        json!({"responseContext":{},"playlistId":"PLbad","actions":[{"confirmDialogRenderer":{}}]}),
+    ] {
+        let account = account().await;
+        let server = Server::new(move |_| (200, response.clone()));
+        let catalog =
+            MusicCatalog::with_account_test_server(account.clone(), server.origin.clone());
+        let library = AccountLibrary::new(account.clone(), Arc::new(|_| {}));
+        let revision = account.snapshot().revision;
+        assert!(
+            library
+                .create_playlist(
+                    &catalog,
+                    "<bad>",
+                    "",
+                    PlaylistPrivacy::Private,
+                    None,
+                    revision
+                )
+                .await
+                .is_err()
+        );
+        assert!(server.requests.lock().unwrap().is_empty());
+        assert_eq!(
+            library
+                .create_playlist(
+                    &catalog,
+                    "Name",
+                    "",
+                    PlaylistPrivacy::Private,
+                    None,
+                    revision
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "playlist_write_unconfirmed"
+        );
+        assert!(library.snapshot().unwrap().playlists.is_empty());
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+    let account = Account::new(Arc::new(MemoryVault::default()));
+    let server = Server::new(|_| panic!("guest must not send a playlist write"));
+    let catalog = MusicCatalog::with_account_test_server(account.clone(), server.origin.clone());
+    let library = AccountLibrary::new(account, Arc::new(|_| {}));
+    assert_eq!(
+        library
+            .create_playlist(&catalog, "Name", "", PlaylistPrivacy::Private, None, 0)
+            .await
+            .unwrap_err()
+            .code,
+        "account_required"
+    );
+}
+
+#[tokio::test]
+async fn a_late_created_playlist_cannot_repopulate_a_signed_out_account() {
+    let account = account().await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let signal = entered.clone();
+    let (release, wait) = std::sync::mpsc::channel();
+    let server = Server::new(move |_| {
+        signal.notify_one();
+        wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        (200, json!({"responseContext":{},"playlistId":"PLlate"}))
+    });
+    let catalog = MusicCatalog::with_account_test_server(account.clone(), server.origin.clone());
+    let library = AccountLibrary::new(account.clone(), Arc::new(|_| {}));
+    let creation = library.create_playlist(
+        &catalog,
+        "Late",
+        "",
+        PlaylistPrivacy::Private,
+        None,
+        account.snapshot().revision,
+    );
+    let switch = async {
+        entered.notified().await;
+        account.sign_out().await.unwrap();
+        library.synchronize_account().unwrap();
+        release.send(()).unwrap();
+    };
+    let (result, _) = tokio::join!(creation, switch);
+    assert!(result.is_err());
+    let snapshot = library.snapshot().unwrap();
+    assert!(
+        !snapshot.connected
+            && snapshot.playlists.is_empty()
+            && snapshot.editable_playlist_ids.is_empty()
+    );
+}
+
+#[tokio::test]
+async fn unconfirmed_song_additions_do_not_publish_success_or_retry_the_write() {
+    for response in [
+        json!({"responseContext":{}}),
+        json!({"responseContext":{},"status":"STATUS_FAILED"}),
+        json!({"responseContext":{},"status":"STATUS_SUCCEEDED","actions":[{"confirmDialogRenderer":{}}]}),
+    ] {
+        let account = account().await;
+        let server = Server::new(move |request| {
+            if request.url.path().ends_with("/create") {
+                (200, json!({"responseContext":{},"playlistId":"PLcreated"}))
+            } else {
+                (200, response.clone())
+            }
+        });
+        let catalog =
+            MusicCatalog::with_account_test_server(account.clone(), server.origin.clone());
+        let library = AccountLibrary::new(account.clone(), Arc::new(|_| {}));
+        let revision = account.snapshot().revision;
+        let created = library
+            .create_playlist(
+                &catalog,
+                "Name",
+                "",
+                PlaylistPrivacy::Private,
+                None,
+                revision,
+            )
+            .await
+            .unwrap();
+        let track = parse_liked_page(&songs(&[A])).unwrap().tracks.remove(0);
+        assert_eq!(
+            library
+                .add_to_playlist(&catalog, &created.playlist.id, track, revision)
+                .await
+                .unwrap_err()
+                .code,
+            "playlist_write_unconfirmed"
+        );
+        assert_eq!(
+            library.snapshot().unwrap().revision,
+            created.library.revision
+        );
+        assert_eq!(server.requests.lock().unwrap().len(), 2);
+    }
+}
+
+#[tokio::test]
+async fn lyrics_use_the_requested_song_without_auth_and_cache_only_public_text() {
+    let account = Account::new(Arc::new(MemoryVault::default()));
+    let server = Server::new(|request| {
+        assert!(!request.authenticated);
+        if request.url.path().ends_with("/next") {
+            assert_eq!(request.body["videoId"], A);
+            (
+                200,
+                json!({"contents":{"singleColumnMusicWatchNextResultsRenderer":{"tabbedRenderer":{"watchNextTabbedResultsRenderer":{"tabs":[{"tabRenderer":{"endpoint":{"browseEndpoint":{"browseId":"MPLYprivate"}}}}]}}}}}),
+            )
+        } else {
+            assert_eq!(request.body["browseId"], "MPLYprivate");
+            (
+                200,
+                json!({"contents":{"sectionListRenderer":{"contents":[{"musicDescriptionShelfRenderer":{"description":{"runs":[{"text":"Fixture line one\n"},{"text":"Fixture line two"}]},"footer":{"runs":[{"text":"Fixture source"}]}}}]}}}),
+            )
+        }
+    });
+    let catalog = MusicCatalog::with_account_test_server(account.clone(), server.origin.clone());
+    let lyrics = catalog.lyrics(A).await.unwrap();
+    assert_eq!(
+        lyrics.text.as_deref(),
+        Some("Fixture line one\nFixture line two")
+    );
+    assert_eq!(lyrics.source.as_deref(), Some("Fixture source"));
+    assert_eq!(catalog.lyrics(A).await.unwrap().video_id, A);
+    assert_eq!(server.requests.lock().unwrap().len(), 2);
+    assert!(
+        !serde_json::to_string(&lyrics)
+            .unwrap()
+            .contains("MPLYprivate")
+    );
+}

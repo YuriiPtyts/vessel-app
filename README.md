@@ -18,6 +18,8 @@ Search-first music app on Apple Silicon macOS and Windows x64, using Tauri 2, Ru
 - Keep listening with YouTube Music radio, native automatic next-song playback, one-track source prefetch, and an editable saved queue.
 - Open an optional private Google sign-in window; verified sessions are managed in Rust and protected with macOS Keychain or Windows DPAPI.
 - Load account likes and saved sidebar playlists, and send account like/unlike changes. Liked songs belongs to YouTube Music; there is no separate Device likes collection.
+- Create YouTube Music playlists (Private by default), choose visibility, and add songs from search, collections, recent listening, or the player to your own playlists.
+- Open **Lyrics** from the player for available YouTube Music song text and attribution; the window follows the playing song. See [playlists and lyrics](docs/playlists-and-lyrics.md).
 - Use native media previous/next and play/pause controls through macOS Now Playing or Windows System Media Transport Controls.
 
 The macOS shell uses native traffic lights, an overlay titlebar, clear Liquid Glass on macOS 26+, a vibrancy fallback on older systems, and reduced-transparency mode. Full album/artist browsers and automatic stream recovery remain pending. Listening history and the queue are local; likes/playlists come from the account. Radio is live-verified as a guest; the Google window/isolation/cancellation are native-verified, but real account login, library synchronization, personalized feeds, and account-required playback still need owner verification. Google may decline embedded sign-in. Recorded tracks only; lossless requires a verified source.
@@ -44,7 +46,7 @@ Saved playlists scroll separately, keeping navigation and Appearance reachable. 
 
 ## Beta build
 
-The current development beta is **0.1.0-beta.9**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
+The current development beta is **0.1.0-beta.10**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
 
 To inspect resource use in Neohtop or Activity Monitor, launch the installed app and search for **`Vessel`**. Older builds and direct Cargo development runs use **`vessel-app`**. WebKit WebContent, networking, and GPU helpers can appear separately; the main process alone is not the app's whole resource footprint.
 
@@ -104,6 +106,8 @@ WebKit presentation-contract checks (mocked IPC, separate from real playback):
 npx playwright install webkit
 npm run test:ui
 ```
+
+Use `VESSEL_UI_PREVIEW=1 npm run test:ui` to check the production frontend instead of the live-reloading development server. This avoids workspace file-provider/HMR reloads interrupting a test. Set `VESSEL_UI_BROWSER=chromium` for focused Windows-engine presentation checks.
 
 ## Product direction
 

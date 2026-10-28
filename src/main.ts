@@ -6,6 +6,7 @@ import './lib/glass.css';
 import './lib/home.css';
 import './lib/controls.css';
 import './lib/readability.css';
+import './lib/features.css';
 
 const target = document.getElementById('app');
 

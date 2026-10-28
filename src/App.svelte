@@ -13,6 +13,7 @@
     Moon,
     Sun,
     ListMusic,
+    Plus,
     RefreshCw,
     Search,
     Settings2,
@@ -26,6 +27,8 @@
   import HomeView from './lib/components/HomeView.svelte';
   import QueuePanel from './lib/components/QueuePanel.svelte';
   import AccountPanel from './lib/components/AccountPanel.svelte';
+  import PlaylistDialog from './lib/components/PlaylistDialog.svelte';
+  import LyricsWindow from './lib/components/LyricsWindow.svelte';
   import {
     defaultAppearance,
     loadAppearance,
@@ -95,6 +98,7 @@
     type QueueSnapshot,
     type AccountSnapshot,
     type PlaybackSelection,
+    type PlaylistMutation,
   } from './lib/native';
 
   type View = 'home' | 'search' | 'liked' | 'recent' | 'collection';
@@ -133,6 +137,9 @@
   let accountBusy = $state(false);
   let busy = $state(false);
   let settingsOpen = $state(false);
+  let playlistOpen = $state(false);
+  let playlistTrack = $state<Track | null>(null);
+  let lyricsOpen = $state(false);
   let appearance = $state(defaultAppearance());
   let viewportWidth = $state(0);
   let artworkOverlayOpen = $state(false);
@@ -202,6 +209,9 @@
         : null),
   );
   const shownTrack = $derived(loadingTrack ?? playback.track);
+  $effect(() => {
+    if (!playback.track) lyricsOpen = false;
+  });
   const artworkVisible = $derived(
     Boolean(
       shownTrack && ((appearance.showNowPlaying && viewportWidth >= 1180) || artworkOverlayOpen),
@@ -366,6 +376,7 @@
       accountLibrary = emptyAccountLibrary(snapshot.revision);
       likeRevision++;
       likeBusy = false;
+      playlistOpen = false;
       if (snapshot.mode === 'connected') void syncAccountLibrary();
     }
     if (changed) {
@@ -608,6 +619,25 @@
     await control(() => playTrack(trackId, id));
   }
 
+  function openPlaylist(track: Track | null = null) {
+    playlistTrack = track;
+    playlistOpen = true;
+    lyricsOpen = false;
+    settingsOpen = false;
+    accountOpen = false;
+    queueOpen = false;
+    if (account.mode === 'connected') void syncAccountLibrary();
+  }
+
+  function playlistUpdated(result: PlaylistMutation, created: boolean) {
+    if (result.library.accountRevision !== account.revision) return;
+    updateAccountLibrary(result.library);
+    playlistOpen = false;
+    if (created || (collectionFromAccount && collection?.item.id === result.playlist.id)) {
+      void openCollection(result.playlist, false, true);
+    }
+  }
+
   async function updateAppearance(change: Partial<AppearancePreferences>, persist = true) {
     const previous = appearance;
     const next = normalizeAppearance({ ...appearance, ...change });
@@ -650,6 +680,7 @@
   }
 
   function keyboard(event: KeyboardEvent) {
+    if (playlistOpen || lyricsOpen) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
       navigate('search');
@@ -718,6 +749,7 @@
   class:sidebar-compact={appearance.sidebarCollapsed}
   class:density-compact={appearance.density === 'compact'}
   class:with-now-playing={artworkVisible && viewportWidth >= 1180}
+  class:feature-open={playlistOpen || (lyricsOpen && Boolean(playback.track))}
   style:--glass-opacity={appearance.glassOpacity / 100}
 >
   <div class="window-drag-region" data-tauri-drag-region></div>
@@ -756,6 +788,13 @@
         onclick={() => navigate('recent')}
         aria-current={view === 'recent' ? 'page' : undefined}
         title="Recently played"><Clock3 size={18} /><span>Recently played</span></button
+      >
+      <button
+        title="Create playlist"
+        onclick={(event) => {
+          event.currentTarget.focus();
+          openPlaylist();
+        }}><Plus size={18} /><span>Create playlist</span></button
       >
     </nav>
     {#if hasAccountCollection}
@@ -970,6 +1009,7 @@
             onplay={(track) => void select(track)}
             onlike={(track) => void like(track)}
             onartist={find}
+            onplaylist={openPlaylist}
           />{#if collection.hasMore}<div class="load-more">
               <button
                 class="secondary-button"
@@ -981,8 +1021,14 @@
             </div>{/if}
         {:else}<div class="empty-collection">
             <Music2 size={30} />
-            <h2>No playable songs were returned.</h2>
-            <p>Try another collection or refresh Listen now.</p>
+            {#if collectionFromAccount && accountLibrary.editablePlaylistIds.includes(collection.item.id)}
+              <h2>Your playlist is ready for music.</h2>
+              <p>Use Add to playlist beside a song, or in the player, to fill it.</p>
+              <button class="secondary-button" onclick={() => navigate('search')}
+                >Find songs<Search size={14} /></button
+              >
+            {:else}<h2>No playable songs were returned.</h2>
+              <p>Try another collection or refresh Listen now.</p>{/if}
           </div>{/if}
       {:else if view === 'search'}
         <section class="page-heading">
@@ -1030,6 +1076,7 @@
             onplay={(track) => void select(track)}
             onlike={(track) => void like(track)}
             onartist={find}
+            onplaylist={openPlaylist}
           />{#if results.hasMore}<div class="load-more">
               <button
                 class="secondary-button"
@@ -1115,6 +1162,7 @@
             onplay={(track) => void select(track)}
             onlike={(track) => void like(track)}
             onartist={find}
+            onplaylist={openPlaylist}
           />
         {:else if view === 'liked' && !accountLibrary.likesReady}<div
             class="empty-collection"
@@ -1204,6 +1252,17 @@
     }}
     onquality={(id) => void quality(id)}
     onartwork={toggleArtwork}
+    {lyricsOpen}
+    onlyrics={() => {
+      lyricsOpen = !lyricsOpen;
+      playlistOpen = false;
+      settingsOpen = false;
+      accountOpen = false;
+      queueOpen = false;
+    }}
+    onplaylist={() => {
+      if (playback.track) openPlaylist(playback.track);
+    }}
     {artworkVisible}
     {queueOpen}
     onqueue={() => {
@@ -1254,4 +1313,29 @@
         void accountAction(signOut);
       }}
     />{/if}
+  {#if playlistOpen}
+    <PlaylistDialog
+      track={playlistTrack}
+      library={accountLibrary}
+      connected={account.mode === 'connected'}
+      accountRevision={account.revision}
+      onclose={() => {
+        playlistOpen = false;
+      }}
+      onupdated={playlistUpdated}
+      onconnect={() => {
+        playlistOpen = false;
+        accountOpen = true;
+      }}
+    />
+  {/if}
+  {#if lyricsOpen && playback.track}
+    <LyricsWindow
+      track={playback.track}
+      accountRevision={account.revision}
+      onclose={() => {
+        lyricsOpen = false;
+      }}
+    />
+  {/if}
 </div>

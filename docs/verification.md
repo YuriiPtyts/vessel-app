@@ -1,5 +1,12 @@
 # Verification log
 
+## Account playlist writes and lyrics beta.10 (2026-10-28)
+
+- **57 ordinary macOS library tests**, **two binary tests**, and non-network integration pass; formatting and default/diagnostic Clippy pass with warnings denied. New real-transport fixtures cover authenticated create/add payloads, editor-backed ownership, private defaults, creation with a song, failed/missing/gated acknowledgements, no automatic retries, guest/input rejection, stale creation after sign-out, and lyrics text/credit/cache boundaries.
+- **59 WebKit checks** pass against the production frontend; the focused Chromium suite includes all seven new playlist/lyrics flows. A dev-server run was interrupted by repeated local workspace/HMR resource reloads. `VESSEL_UI_PREVIEW=1` builds and serves the production frontend to keep the test pages stable; the fixture/contrast assertions are unchanged. A reproduced 420px playlist-button overlap and a 960px transport/accessory overlap were corrected. Final production WebKit/Chromium screenshots of playlist and lyrics windows were reviewed.
+- A live guest search/lyrics check retrieved **45 lines with source attribution** in **1.72 seconds** in the observed run. Only the count and attribution flag were printed. This is a real lyrics lookup, not a real-account playlist write or a latency guarantee.
+- Account playlist creation/addition is implemented and authenticated-fixture/UI verified. Actual Google account writes and cross-app reconciliation still need the owner's connected account. Existing real-account, physical-audio, minimum-OS, and signing limits remain.
+
 ## Windows backdrop, sign-in handoff, and filled text beta.9 (2026-10-28)
 
 - Focused tests went red for the opaque Windows main-window configuration, capture waiting only for `music.youtube.com`, and a blocked YouTube consent host. Windows now declares a clear native/WebView2 surface and Acrylic; the runtime material command applies/clears the backdrop instead of doing nothing.

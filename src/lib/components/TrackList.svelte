@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Clock3, Heart, LoaderCircle, Pause, Play, AudioLines } from '@lucide/svelte';
+  import { Clock3, Heart, LoaderCircle, Pause, Play, AudioLines, ListPlus } from '@lucide/svelte';
   import { trackTime, type Track } from '../native';
   import Artwork from './Artwork.svelte';
 
@@ -14,6 +14,7 @@
     onplay,
     onlike,
     onartist,
+    onplaylist,
   }: {
     tracks: Track[];
     activeId?: string;
@@ -25,6 +26,7 @@
     onplay: (track: Track) => void;
     onlike: (track: Track) => void;
     onartist: (artist: string) => void;
+    onplaylist: (track: Track) => void;
   } = $props();
 </script>
 
@@ -74,16 +76,26 @@
         <td class="album-cell"><span>{track.album ?? '—'}</span></td>
         <td class="time-cell">{trackTime(track.durationSeconds)}</td>
         <td class="save-cell"
-          ><button
-            class="icon-button like-button"
-            class:liked={likedIds.has(track.id)}
-            aria-label={`${likedIds.has(track.id) ? 'Unsave' : 'Save'} ${track.title}`}
-            aria-pressed={likedIds.has(track.id)}
-            disabled={likesDisabled}
-            title={likeDestination}
-            onclick={() => onlike(track)}
-            ><Heart size={16} fill={likedIds.has(track.id) ? 'currentColor' : 'none'} /></button
-          ></td
+          ><div class="track-actions">
+            <button
+              class="icon-button like-button"
+              class:liked={likedIds.has(track.id)}
+              aria-label={`${likedIds.has(track.id) ? 'Unsave' : 'Save'} ${track.title}`}
+              aria-pressed={likedIds.has(track.id)}
+              disabled={likesDisabled}
+              title={likeDestination}
+              onclick={() => onlike(track)}
+              ><Heart size={16} fill={likedIds.has(track.id) ? 'currentColor' : 'none'} /></button
+            ><button
+              class="icon-button"
+              aria-label={`Add ${track.title} to playlist`}
+              title="Add to playlist"
+              onclick={(event) => {
+                event.currentTarget.focus();
+                onplaylist(track);
+              }}><ListPlus size={16} /></button
+            >
+          </div></td
         >
       </tr>
     {/each}

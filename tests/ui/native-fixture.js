@@ -78,6 +78,9 @@ export async function nativeFixture(page, options = {}) {
       subtitle: 'Your YouTube Music playlist',
     };
     let remoteLiked = [tracks[1]];
+    const createdPlaylists = [];
+    const playlistTracks = new Map();
+    let lyricsRequests = 0;
     let libraryRevision = 0;
     let accountLibrary = null;
     function accountLibrarySnapshot(ready = true) {
@@ -97,7 +100,16 @@ export async function nativeFixture(page, options = {}) {
                 id: `VLsaved_${index + 1}`,
                 title: `Saved playlist ${index + 1}`,
               }))
-            : [savedPlaylist]
+            : [
+                ...createdPlaylists,
+                savedPlaylist,
+                ...(options.readOnlyPlaylist
+                  ? [{ ...savedPlaylist, id: 'VLreadonly', title: 'Someone else’s playlist' }]
+                  : []),
+              ]
+          : [],
+        editablePlaylistIds: ready
+          ? [...createdPlaylists.map((item) => item.id), savedPlaylist.id]
           : [],
         likesError: null,
         playlistsError: null,
@@ -188,6 +200,7 @@ export async function nativeFixture(page, options = {}) {
     window.isTauri = true;
     window.__vesselCalls = [];
     window.__vesselLibraryReplies = 0;
+    window.__vesselPlaylistReplies = 0;
     window.__vesselVolumeInFlight = 0;
     window.__vesselMaxVolumeInFlight = 0;
     window.__vesselEmitSnapshot = (override) =>
@@ -297,11 +310,78 @@ export async function nativeFixture(page, options = {}) {
             emit('account-library-state', accountLibrary);
             return structuredClone(accountLibrary);
           }
+          case 'create_account_playlist': {
+            if (options.playlistDelay)
+              await new Promise((resolve) => setTimeout(resolve, options.playlistDelay));
+            if (options.playlistFailure)
+              throw {
+                code: 'playlist_write_unconfirmed',
+                message:
+                  'YouTube Music did not confirm the playlist change. Check the playlist before retrying.',
+                retryable: true,
+              };
+            const item = {
+              ...savedPlaylist,
+              id: `VLPLcreated${createdPlaylists.length + 1}`,
+              title: args.title,
+            };
+            createdPlaylists.unshift(item);
+            playlistTracks.set(
+              item.id,
+              tracks.filter((track) => track.id === args.videoId),
+            );
+            const reply = { ...accountLibrarySnapshot(), accountRevision: args.accountRevision };
+            emit('account-library-state', reply);
+            window.__vesselPlaylistReplies++;
+            return { playlist: item, library: reply };
+          }
+          case 'add_to_account_playlist': {
+            if (options.playlistDelay)
+              await new Promise((resolve) => setTimeout(resolve, options.playlistDelay));
+            if (options.playlistFailure)
+              throw {
+                code: 'playlist_write_unconfirmed',
+                message:
+                  'YouTube Music did not confirm the playlist change. Check the playlist before retrying.',
+                retryable: true,
+              };
+            const item =
+              createdPlaylists.find((playlist) => playlist.id === args.id) ?? savedPlaylist;
+            const previous = playlistTracks.get(item.id) ?? tracks.slice(0, 2);
+            playlistTracks.set(item.id, [
+              ...previous,
+              tracks.find((track) => track.id === args.videoId),
+            ]);
+            const reply = { ...accountLibrarySnapshot(), accountRevision: args.accountRevision };
+            emit('account-library-state', reply);
+            window.__vesselPlaylistReplies++;
+            return { playlist: item, library: reply };
+          }
+          case 'song_lyrics': {
+            const request = ++lyricsRequests;
+            if (options.lyricsDelay && request === 1)
+              await new Promise((resolve) => setTimeout(resolve, options.lyricsDelay));
+            if (options.lyricsFailure && request === 1)
+              throw {
+                code: 'lyrics_unavailable',
+                message: 'Lyrics could not load. Try again.',
+                retryable: true,
+              };
+            return {
+              videoId: args.videoId,
+              text: options.noLyrics
+                ? null
+                : `${args.videoId === tracks[0].id ? 'First' : 'Next'} fixture song\n${'A made-up line for interface testing.\n'.repeat(50)}`,
+              source: options.noLyrics ? null : 'Fixture lyrics source',
+            };
+          }
           case 'account_playlist':
             return {
-              item: savedPlaylist,
-              tracks: structuredClone(args.more ? tracks : tracks.slice(0, 2)),
-              hasMore: !args.more,
+              item: createdPlaylists.find((item) => item.id === args.id) ?? savedPlaylist,
+              tracks: structuredClone(
+                playlistTracks.get(args.id) ?? (args.more ? tracks : tracks.slice(0, 2)),
+              ),
+              hasMore: !playlistTracks.has(args.id) && !args.more,
             };
           case 'home_feed':
             return {
