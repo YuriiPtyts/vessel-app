@@ -28,3 +28,9 @@ The output is `.cache/releases/v0.1.0-beta.3/Vessel-0.1.0-beta.3-windows-x64-set
 `.github/workflows/windows-build.yml` builds on a Windows runner. It checks the frontend and Rust code, runs real DPAPI/cancellation filesystem/kernel tests, opens an actual WebView2 window and invokes Rust from the mounted frontend in isolated diagnostic mode, then builds the normal installer. The installer test performs a silent install to a path with spaces, validates the installed runtimes, exercises local muted/null-output decoding and volume through the installed DLL, launches/closes the normal installed application, and uninstalls it.
 
 The null-output decode check does not certify WASAPI on physical speakers, audible volume latency, media-key delivery, real Google credentials, or personalized/Premium playback. Those require owner testing on Windows hardware. See [verification](verification.md) for actual run results and [native dependencies](native-dependencies.md) for provenance and distribution scope.
+
+### Verified beta.3 build
+
+[Native Windows CI run 40607451788](https://github.com/YuriiPtyts/vessel-app/actions/runs/40607451788) completed successfully on Windows Server 2025 x64. It passed 35 library tests plus the IPC-origin and non-network integration checks, including real DPAPI round-trip/corruption preservation and job-object cleanup. Actual WebView2/native IPC and SMTC availability were confirmed. Silent install, installed extractor/Deno execution, installed DLL null-output decoding/volume, an eight-second normal app launch, normal close, and silent uninstall passed.
+
+The downloaded installer is **85,032,286 bytes**, and its SHA-256 matches `SHA256SUMS-Windows`. It is unsigned. The run used fixture/local audio and no real account credentials; the hardware/provider limits above still apply.
