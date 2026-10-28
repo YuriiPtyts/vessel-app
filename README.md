@@ -2,6 +2,8 @@
 
 A lightweight YouTube Music desktop client for macOS and Windows. Private, proprietary project; all rights reserved. Vessel is the working name inherited from this workspace.
 
+Start with the [project tree and runtime flow](docs/project-map.md) for a map of the interface, Rust core, native playback, storage, and platform builds.
+
 ## Status
 
 Search-first music app on Apple Silicon macOS and Windows x64, using Tauri 2, Rust, and Svelte 5:
