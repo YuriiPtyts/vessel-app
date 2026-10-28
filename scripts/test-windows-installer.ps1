@@ -37,8 +37,23 @@ try {
   if (-not $uninstaller) { throw 'Installed uninstaller is missing.' }
   $remove = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -PassThru
   if (-not $remove.WaitForExit(30000) -or $remove.ExitCode -ne 0) { throw 'Silent uninstall failed.' }
+  $uninstallDeadline = [DateTime]::UtcNow.AddSeconds(15)
+  while (Test-Path $app) {
+    if ([DateTime]::UtcNow -ge $uninstallDeadline) { throw 'Uninstaller did not remove the installed application.' }
+    Start-Sleep -Milliseconds 100
+  }
   @{ passed = $true; installedRuntime = $true; localPcmDecoded = $true; nativeWindow = $true; normalQuit = $true; uninstalled = $true; audibleOutputTested = $false; realAccountTested = $false } | ConvertTo-Json
 } finally {
   if ($process -and -not $process.HasExited) { $process.Kill($true) }
-  if (Test-Path $temporary) { Remove-Item -Recurse -Force $temporary }
+  # NSIS can finish deleting runtime files after its launcher exits. Only retry
+  # cleanup of this fixture's unique directory; do not race the uninstaller.
+  $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(15)
+  while (Test-Path $temporary) {
+    try { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction Stop }
+    catch {
+      if (-not (Test-Path $temporary)) { break }
+      if ([DateTime]::UtcNow -ge $cleanupDeadline) { throw }
+      Start-Sleep -Milliseconds 200
+    }
+  }
 }
