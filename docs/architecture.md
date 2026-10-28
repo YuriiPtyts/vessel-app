@@ -60,6 +60,8 @@ The frontend is organized into a shell and Artwork, TrackList, PlayerBar, QueueP
 
 `appearance.ts` validates and persists versioned presentation preferences. Palette tokens and material rules are separate; Duskfox is the only complete theme currently shipped. AppearancePanel controls tint/accent/density/sidebar/artwork and reduced transparency. NowPlayingPanel requests up to 512px artwork using only Google's known resize syntax; Artwork retries the original thumbnail once and retains that fallback across playback snapshots. No canvas extraction or continuously animated artwork is introduced.
 
+`readability.css` and semantic glass ink/material tokens protect text-bearing surfaces over adverse backgrounds. `appearance.ts` derives the extra local scrim from the existing tint without changing saved preferences. OS increased contrast strengthens the materials/text roles; the selected window tint and transparent main stage remain available. See [glass readability](glass-readability.md) for the actual rendered-background contrast regression and scope.
+
 ## Closed-source packaging constraint
 
 libmpv's license depends on its build and linked components. macOS uses the pinned source-built `0.41.0-vessel.2` engine with CoreAudio cleanup and per-handle output gain; Windows uses the separately pinned upstream x64 LGPL development library. yt-dlp remains a separate GPL-licensed process. Record artifact-specific obligations and complete the redistribution materials before public distribution; see native-dependencies.md. Preparation verifies artifact hashes, system-only dynamic linking for the macOS build, and the Windows runtime's PE architecture/GPL-disabled engine configuration.

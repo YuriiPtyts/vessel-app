@@ -1,0 +1,96 @@
+/* Text-bearing materials have their own contrast floor; gutters retain the
+   selected window transparency. These are static tints, not extra blur layers. */
+.app-frame {
+  --reading-surface-opacity: var(--reading-scrim, 0.8);
+  --theme-muted: var(--theme-secondary);
+  --muted: var(--theme-secondary);
+  --faint: var(--theme-secondary);
+}
+.app-frame:not(.opaque) {
+  --theme-secondary: var(--theme-glass-secondary);
+  --theme-error: var(--theme-glass-error);
+}
+
+.app-frame:not(.opaque)
+  :is(.sidebar, .topbar, .now-playing-panel, .provider-shelf, .floating-player, .track-table) {
+  background-color: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
+}
+
+/* Nested white washes compound over a bright desktop. A tonal card keeps its
+   sheen/border while its metadata and hover state retain a dark reading field. */
+.app-frame:not(.opaque) .provider-card {
+  background: rgb(var(--material-reading-rgb) / 0.18);
+}
+.app-frame:not(.opaque) .provider-card:hover,
+.app-frame:not(.opaque) .provider-card:focus-visible {
+  background: rgb(var(--theme-selection-rgb) / 0.2);
+}
+
+.app-frame:not(.opaque) .filter-pills button.chosen {
+  background: color-mix(in srgb, var(--accent) 8%, var(--theme-surface));
+}
+.app-frame:not(.opaque) .track-table tr.current,
+.app-frame:not(.opaque) .track-table tr.pending {
+  background: color-mix(in srgb, rgb(var(--theme-selection-rgb)) 20%, var(--theme-surface));
+}
+
+.app-frame:not(.opaque)
+  :is(
+    .provider-home-heading,
+    .page-heading,
+    .collection-heading,
+    .provider-collection-heading,
+    .result-toolbar,
+    .search-welcome,
+    .empty-collection,
+    .notice
+  ) {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-frame:not(.opaque)
+  :is(
+    .provider-home-heading,
+    .page-heading,
+    .collection-heading,
+    .provider-collection-heading,
+    .result-toolbar,
+    .search-welcome,
+    .empty-collection,
+    .notice
+  )::before {
+  content: '';
+  position: absolute;
+  inset: -8px -12px;
+  z-index: -1;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgb(var(--theme-foreground-rgb) / 0.03), transparent 65%),
+    rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
+  box-shadow: inset 0 1px rgb(var(--theme-foreground-rgb) / 0.08);
+  pointer-events: none;
+}
+
+/* Keep the past-item hierarchy in artwork/color, not faded text. */
+.queue-tracks li.past {
+  opacity: 1;
+}
+.queue-tracks li.past .queue-copy strong {
+  color: var(--theme-secondary);
+}
+.queue-tracks li.past .queue-art {
+  opacity: 0.6;
+}
+
+@media (prefers-contrast: more) {
+  .app-frame:not(.opaque),
+  .app-frame.opaque {
+    --reading-surface-opacity: 1;
+    --theme-secondary: var(--theme-foreground);
+    --theme-muted: var(--theme-foreground);
+    --muted: var(--theme-foreground);
+    --faint: var(--theme-foreground);
+    --border: rgb(var(--theme-foreground-rgb) / 0.3);
+  }
+}

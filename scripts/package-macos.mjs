@@ -59,7 +59,22 @@ try {
   // Restore the prepared layout before signing, preserving relative symlinks.
   const runtime = join(app, 'Contents', 'Resources', 'runtime');
   await rm(runtime, { recursive: true, force: true });
-  run('/usr/bin/ditto', ['--norsrc', '--noextattr', join(root, 'src-tauri', 'runtime'), runtime]);
+  await mkdir(runtime);
+  const dependencies = JSON.parse(await readFile(join(root, 'native-dependencies.json'), 'utf8'));
+  const runtimeFiles = [
+    ...dependencies.dependencies.map((dependency) => dependency.file),
+    'dependencies.json',
+    'DEPENDENCIES.md',
+    'libmpv-build.json',
+  ];
+  for (const file of runtimeFiles) {
+    run('/usr/bin/ditto', [
+      '--norsrc',
+      '--noextattr',
+      join(root, 'src-tauri', 'runtime', file),
+      join(runtime, file),
+    ]);
+  }
 
   const targets = await signingTargets(app);
   for (const target of targets) {

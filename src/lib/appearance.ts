@@ -34,6 +34,13 @@ export function usesOpaqueMaterial(preferences: AppearancePreferences): boolean 
   return preferences.reducedTransparency || preferences.glassOpacity === GLASS_TINT_MAX;
 }
 
+/** Reach a stable reading material without changing the user's window tint. */
+export function readingScrimOpacity(preferences: AppearancePreferences): number {
+  if (usesOpaqueMaterial(preferences)) return 0;
+  const tint = preferences.glassOpacity / 100;
+  return Math.max(0, (0.9 - tint) / (1 - tint));
+}
+
 export function normalizeAppearance(value: unknown, systemReduced = false): AppearancePreferences {
   const defaults = defaultAppearance(systemReduced);
   if (typeof value !== 'object' || value === null) return defaults;

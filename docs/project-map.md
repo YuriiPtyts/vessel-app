@@ -18,6 +18,7 @@ Vessel-app/
 │       ├── motion.ts                     Shared panel reveal transition
 │       ├── themes/duskfox.css            Default semantic palette
 │       ├── glass.css / controls.css      Surface materials and control styles
+│       ├── readability.css               Text contrast and local reading materials
 │       ├── home.css                      Home/discovery presentation
 │       └── components/
 │           ├── HomeView.svelte           Provider recommendation shelves

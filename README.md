@@ -37,9 +37,11 @@ See [the output-stage volume regression and measurements](docs/volume-response.m
 
 The **Duskfox** palette, derived from the owner's Zed theme, remains the default, with a clear-glass material and 50% default tint. Open **Appearance** to change the accent, glass tint (50–100%), transparency, song-list density, sidebar layout, and artwork panel. Choices persist across restarts and can be reset. Transient panels use a short genie-style reveal that respects the system's reduced-motion preference. See [appearance and the planned theme library](docs/themes.md) and [motion behavior](docs/motion.md).
 
+Local reading materials and semantic text contrast keep labels readable over bright/busy backgrounds while retaining the chosen window tint. The OS **Increase Contrast** preference strengthens these materials without changing saved preferences. See [glass readability and measurements](docs/glass-readability.md).
+
 ## Beta build
 
-The current development beta is **0.1.0-beta.3**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
+The current development beta is **0.1.0-beta.4**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
 
 To inspect resource use in Neohtop or Activity Monitor, launch the installed app and search for **`Vessel`**. Older builds and direct Cargo development runs use **`vessel-app`**. WebKit WebContent, networking, and GPU helpers can appear separately; the main process alone is not the app's whole resource footprint.
 

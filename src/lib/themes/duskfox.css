@@ -1,5 +1,5 @@
-/* Duskfox – blurred: palette mapped from Nightfox for Zed (cange/nightfox.zed).
-   Palette facts only; Vessel's layout and material treatment are its own. */
+/* Duskfox palette mapped from Nightfox for Zed (cange/nightfox.zed).
+   Glass reading roles derive from the palette; layout/material treatment is Vessel's. */
 :root {
   --theme-bg: #232136;
   --theme-bg-rgb: 35 33 54;
@@ -21,6 +21,9 @@
   --theme-gold: #f6c177;
   --theme-green: #a3be8c;
   --theme-error: #eb6f92;
+  --material-reading-rgb: var(--theme-surface-rgb);
+  --theme-glass-secondary: color-mix(in srgb, var(--theme-secondary) 70%, var(--theme-foreground));
+  --theme-glass-error: color-mix(in srgb, var(--theme-error) 75%, var(--theme-foreground));
   --accent: var(--theme-rose);
   --accent-strong: var(--theme-rose);
   --muted: var(--theme-secondary);

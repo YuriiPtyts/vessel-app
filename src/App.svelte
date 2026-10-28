@@ -26,6 +26,7 @@
     defaultAppearance,
     loadAppearance,
     normalizeAppearance,
+    readingScrimOpacity,
     saveAppearance,
     usesOpaqueMaterial,
     type AppearancePreferences,
@@ -627,6 +628,7 @@
   class:density-compact={appearance.density === 'compact'}
   class:with-now-playing={artworkVisible && viewportWidth >= 1180}
   style:--glass-opacity={appearance.glassOpacity / 100}
+  style:--reading-scrim={readingScrimOpacity(appearance)}
 >
   <div class="window-drag-region" data-tauri-drag-region></div>
   <aside class="sidebar" aria-label="Main navigation">
