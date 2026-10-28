@@ -31,6 +31,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
       - run: npm ci
       - run: npm run prepare:native
       - run: npm run check

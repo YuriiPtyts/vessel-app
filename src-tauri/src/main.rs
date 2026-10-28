@@ -388,10 +388,10 @@ fn main() {
             #[cfg(target_os = "macos")]
             media_controls::install(dispatch);
             #[cfg(target_os = "windows")]
-            if let Some(window) = app.get_webview_window("main") {
-                if media_controls::install(window.hwnd()?, dispatch).is_err() {
-                    eprintln!("Windows media controls are unavailable on this system.");
-                }
+            if let Some(window) = app.get_webview_window("main")
+                && media_controls::install(window.hwnd()?, dispatch).is_err()
+            {
+                eprintln!("Windows media controls are unavailable on this system.");
             }
         }
         #[cfg(all(target_os = "macos", feature = "native-diagnostics"))]
