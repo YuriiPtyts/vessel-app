@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { genie } from '../motion';
+  import { panelReveal } from '../motion';
+  import { dismissOnOutside } from '../popover';
   import {
     ArrowUpRight,
     Check,
@@ -33,8 +34,9 @@
 <section
   class="music-popover account-popover"
   data-material-overlay
+  use:dismissOnOutside={{ onDismiss: onclose, trigger: '[data-popover-trigger="account"]' }}
   aria-label="Google account"
-  in:genie={{ origin: 'top-right' }}
+  in:panelReveal={{ origin: 'top-right' }}
 >
   <div class="popover-heading">
     <div>
@@ -92,8 +94,7 @@
     <ShieldCheck size={17} />
     <p>
       Your verified session is protected by your operating system and restored on launch. Sign out
-      clears remembered Google sign-in; local liked songs, history, and appearance stay on this
-      device.
+      clears remembered Google sign-in; listening history and appearance stay on this device.
     </p>
   </div>
 </section>

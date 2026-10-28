@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { nativeFixture } from './native-fixture';
 
-test('transient surfaces use an anchored genie reveal and settle to their normal layout', async ({
+test('transient surfaces reveal proportionally and settle to their normal layout', async ({
   page,
 }, testInfo) => {
   await nativeFixture(page);
@@ -14,10 +14,10 @@ test('transient surfaces use an anchored genie reveal and settle to their normal
       if (
         this.matches('.appearance-popover, .music-popover') &&
         Number(animation.effect.getTiming().duration) > 0 &&
-        animation.effect.getKeyframes().some((frame) => frame.clipPath)
+        animation.effect.getKeyframes().some((frame) => frame.transform)
       ) {
         animation.pause();
-        animation.currentTime = 160;
+        animation.currentTime = Number(animation.effect.getTiming().duration) / 2;
         window.__vesselReveals.push({ node: this, animation });
       }
       return animation;
@@ -50,14 +50,17 @@ test('transient surfaces use an anchored genie reveal and settle to their normal
           : 0,
         transform: getComputedStyle(node).transform,
         clip: getComputedStyle(node).clipPath,
+        widthRatio: node.getBoundingClientRect().width / node.offsetWidth,
+        heightRatio: node.getBoundingClientRect().height / node.offsetHeight,
       };
     });
     expect(sample.animated).toBe(true);
     expect(sample.transforms, JSON.stringify(sample)).toBeGreaterThan(3);
     expect(sample.transform).not.toBe('none');
-    expect(sample.clip).toContain('path(');
+    expect(sample.clip).toBe('none');
+    expect(Math.abs(sample.widthRatio - sample.heightRatio)).toBeLessThan(0.03);
     if (panel === 'Appearance settings') {
-      await page.screenshot({ path: testInfo.outputPath('genie-mid-reveal.png') });
+      await page.screenshot({ path: testInfo.outputPath('balanced-mid-reveal.png') });
     }
     await surface.evaluate((node) => {
       window.__vesselReveals.findLast((entry) => entry.node === node).animation.finish();
@@ -70,9 +73,7 @@ test('transient surfaces use an anchored genie reveal and settle to their normal
   }
 });
 
-test('reduced motion opens genie surfaces immediately without warping content', async ({
-  page,
-}) => {
+test('reduced motion opens surfaces immediately without warping content', async ({ page }) => {
   await nativeFixture(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
@@ -311,11 +312,18 @@ test('searches by artist, plays a result directly, and keeps quality controls in
   await page.screenshot({ path: test.info().outputPath('search.png'), fullPage: true });
 });
 
-test('saved songs and recent listening work independently of account sign-in', async ({ page }) => {
+test('liked songs use the connected account and recent listening stays available', async ({
+  page,
+}) => {
   await nativeFixture(page);
   await page.goto('/');
   await page.getByRole('searchbox', { name: 'Search music' }).fill('Daft Punk');
   await page.getByRole('searchbox', { name: 'Search music' }).press('Enter');
+  await expect(
+    page.getByRole('button', { name: 'Save Instant Crush', exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => window.__vesselCompleteSignIn());
+  await expect(page.getByRole('button', { name: 'Saved discoveries', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Save Instant Crush', exact: true }).click();
   await page.getByRole('button', { name: 'Liked songs', exact: false }).click();
   await expect(page.getByRole('heading', { name: 'Liked songs', exact: true })).toBeVisible();
@@ -466,7 +474,7 @@ test('glass tint starts at 50%, clamps old low values, and is opaque at 100%', a
   await expect(frame).toHaveClass(/opaque/);
   expect(
     await frame.evaluate((element) => getComputedStyle(element, '::before').backgroundColor),
-  ).toBe('rgb(35, 33, 54)');
+  ).toBe('rgb(255, 255, 255)');
   await expect
     .poll(() =>
       page.evaluate(
@@ -557,14 +565,16 @@ test('radio queue and transport follow native events without renderer-driven aut
   await expect(page.getByRole('button', { name: 'Next song', exact: true })).toBeDisabled();
 });
 
-test('Google connection requires a verified account event and sign-out preserves local likes', async ({
+test('Google connection requires verification and sign-out preserves guest playback', async ({
   page,
 }) => {
   await nativeFixture(page);
   await page.goto('/');
   await page.getByRole('searchbox', { name: 'Search music' }).fill('Daft Punk');
   await page.getByRole('searchbox', { name: 'Search music' }).press('Enter');
-  await page.getByRole('button', { name: 'Save Instant Crush', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Save Instant Crush', exact: true }),
+  ).toBeDisabled();
   await page.getByRole('button', { name: 'Listen now', exact: true }).click();
   await page.getByRole('button', { name: 'Open account settings' }).click();
   const account = page.getByRole('region', { name: 'Google account', exact: true });
@@ -590,7 +600,10 @@ test('Google connection requires a verified account event and sign-out preserves
   await expect(page.getByText('Guest recommendations', { exact: true })).toBeVisible();
   await account.getByRole('button', { name: 'Close account settings' }).click();
   await page.getByRole('button', { name: 'Liked songs', exact: false }).click();
-  await expect(page.getByRole('button', { name: 'Play Instant Crush', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Connect to see your liked songs.' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Listen now', exact: true }).click();
   await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
 });

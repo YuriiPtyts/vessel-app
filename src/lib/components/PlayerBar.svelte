@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { genie } from '../motion';
+  import { panelReveal } from '../motion';
+  import { dismissOnOutside } from '../popover';
   import {
     Check,
     ChevronUp,
@@ -34,7 +35,7 @@
     transitioning,
     liked,
     likesDisabled = false,
-    likeDestination = 'Saved only on this device',
+    likeDestination = 'YouTube Music likes',
     canPrevious,
     canNext,
     onpause,
@@ -245,6 +246,7 @@
     <div class="quality-anchor">
       <button
         class="quality-button"
+        data-popover-trigger="quality"
         aria-label="Audio quality"
         aria-expanded={qualityOpen}
         onclick={() => {
@@ -264,7 +266,13 @@
           role="region"
           aria-label="Audio quality options"
           data-material-overlay
-          in:genie
+          use:dismissOnOutside={{
+            onDismiss: () => {
+              qualityOpen = false;
+            },
+            trigger: '[data-popover-trigger="quality"]',
+          }}
+          in:panelReveal
         >
           <div class="popover-heading">
             <div>
@@ -297,6 +305,7 @@
     </div>
     <button
       class="icon-button queue-trigger"
+      data-popover-trigger="queue"
       class:selected={queueOpen}
       aria-label="Show play queue"
       aria-expanded={queueOpen}

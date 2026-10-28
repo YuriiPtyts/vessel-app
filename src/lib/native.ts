@@ -185,7 +185,6 @@ export const browseCollection = (id: string, more = false) =>
 export const playSong = (videoId: string, context: string[] = []) =>
   invoke<PlaybackSelection>('play_song', { videoId, context });
 export const getLibrary = () => invoke<LocalLibrary>('local_library');
-export const toggleLike = (videoId: string) => invoke<LocalLibrary>('toggle_like', { videoId });
 export const getAccountLibrary = () => invoke<AccountLibrarySnapshot>('account_library');
 export const refreshAccountLibrary = (accountRevision: number, force = false) =>
   invoke<AccountLibrarySnapshot>('refresh_account_library', { accountRevision, force });

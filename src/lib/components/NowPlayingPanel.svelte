@@ -1,6 +1,6 @@
 <script lang="ts">
   import { AudioLines, Heart, X } from '@lucide/svelte';
-  import { genie } from '../motion';
+  import { panelReveal } from '../motion';
   import Artwork from './Artwork.svelte';
   import { formatLabel, type PlaybackSnapshot, type Track } from '../native';
   let {
@@ -9,7 +9,7 @@
     loading,
     liked,
     likesDisabled = false,
-    likeDestination = 'Saved only on this device',
+    likeDestination = 'YouTube Music likes',
     onclose,
     onlike,
   }: {
@@ -24,7 +24,12 @@
   } = $props();
 </script>
 
-<aside class="now-playing-panel" aria-label="Now playing artwork" data-material-overlay in:genie>
+<aside
+  class="now-playing-panel"
+  aria-label="Now playing artwork"
+  data-material-overlay
+  in:panelReveal
+>
   <div class="now-playing-panel-heading">
     <span class="eyebrow">NOW PLAYING</span><button
       class="icon-button"

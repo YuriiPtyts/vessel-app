@@ -1,17 +1,21 @@
-# Vessel 0.1.0-beta.7
+# Vessel 0.1.0-beta.8
 
 Private Apple Silicon macOS and Windows x64 development beta. This is a prerelease, not a stable release.
 
 ## Included changes
 
+- Separate Light/Dark buttons and a top-bar sun/moon shortcut. Glass tint changes transparency only; high transparency strengthens glyphs without recoloring surfaces or icons. Existing appearance choices are migrated without resetting other settings.
+- Queue, quality, account, and appearance menus close on an outside click or Escape. Inside clicks stay inside, trigger toggles work normally, and the outside control still receives its click.
+- Fixed the opening flash and transparent player edges by replacing loaded mask images with live inline vector clips. Appearance's background stays in place while settings scroll.
+- Liked songs now uses YouTube Music only. Device likes navigation and guest-local heart actions were removed; guest playback and recent listening remain available.
 - Saved playlists now scroll in their own sidebar area; Listen now, Search, Appearance, and Account stay reachable with long libraries.
-- One material tint across the sidebar, main content, top bar, player, artwork area, and popovers. Floating materials replace the background beneath them instead of doubling its opacity. At 50–69% tint, light glass uses dark text; at 70–100%, Duskfox dark glass uses light text. Existing preferences remain saved.
-- Account likes now read from YouTube Music and hearts write back to the verified account. Saved account playlists appear in the sidebar and open with song pagination. Device-only likes remain separate and survive sign-out. Refresh from the sidebar/likes view or return to the app (one-minute refresh reuse). See [account library behavior](radio-and-accounts.md#account-library-sync-2026-10-28).
+- One material tint across the sidebar, main content, top bar, player, artwork area, and popovers. Floating materials replace the background beneath them instead of doubling its opacity.
+- Account likes read from YouTube Music and hearts write back to the verified account. Saved account playlists appear in the sidebar with pagination. Refresh from the sidebar/likes view or return to the app (one-minute refresh reuse). See [account library behavior](radio-and-accounts.md#account-library-sync-2026-10-28).
 - Glass readability uses semantic text/error contrast, visible selection borders, readable queue history, and OS increased-contrast support. Extra opaque reading patches have been removed; 100% tint and reduced-transparency mode stay opaque. See [glass readability](glass-readability.md).
 - Windows x64 NSIS installer with pinned Windows playback/extraction runtimes, WebView2 setup, DPAPI-protected remembered sessions, native Windows media controls, and bounded extractor process cleanup. See [Windows builds](windows-build.md).
 - New Rust-owned per-player output gain applies after queued PCM, removing the reproduced AVFoundation volume delay. The established loudness curve, mute restoration, and gain across output recreation are preserved.
 - Native macOS Now Playing previous/next and play/pause handlers, independent of renderer keyboard focus. The installed process is named **Vessel** for Neohtop/Activity Monitor; older builds and Cargo development runs use `vessel-app`.
-- Shared genie-style reveals for appearance, account, queue, audio-quality, and now-playing panels, with immediate closing and OS reduced-motion support. See [motion behavior](motion.md).
+- Balanced 220 ms reveals for appearance, account, queue, audio-quality, and now-playing panels. Uniform scaling replaces the stretched genie; the material remains steady while content fades. Closing is immediate and reduced motion is respected. See [motion behavior](motion.md).
 - A rebuilt arm64 libmpv engine with the targeted CoreAudio initialization-failure cleanup fix. The deterministic regression verifies that failed initialization leaves no device callbacks behind. See [the crash investigation](audio-device-investigation.md).
 - Remembered Google sign-in data restored through macOS Keychain, with server verification required before authenticated requests resume and explicit forgetting on sign-out.
 - Native radio/queue management, faster guest playback, responsive/coalesced volume controls, and readable 50–100% glass tint. Existing likes, history, queue, and appearance data are retained.
@@ -20,11 +24,11 @@ Private Apple Silicon macOS and Windows x64 development beta. This is a prerelea
 
 ### macOS
 
-Download `Vessel-0.1.0-beta.7-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+Download `Vessel-0.1.0-beta.8-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
 
 ### Windows
 
-Run `Vessel-0.1.0-beta.7-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
+Run `Vessel-0.1.0-beta.8-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
 
 ### First launch if macOS blocks Vessel
 

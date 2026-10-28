@@ -1,34 +1,37 @@
-# Legible text and one shared glass material
+# Shared glass, independent modes, and readable text
 
-## Why the previous version looked uneven
+## Current controls
 
-The beta.4/5 contrast treatment added extra dark reading layers over the sidebar, bars, lists, and popover text. That made pale text readable, but left the main gutters much more transparent than the other regions. At 50% tint over white, the reproduced sidebar pixel was `[49,47,61]` while the main gutter was `[148,145,154]`.
+- Light/Dark is an explicit saved preference, available in Appearance and through the top-bar sun/moon button.
+- Glass tint changes the shared material alpha from 50–100%. It never changes the selected mode, surface RGB, or icon colors. Opaque mode makes that same material solid.
+- Below 70% tint, only glyphs receive extra contrast. Light mode adds a small same-color stroke. Dark mode uses white text fill with a 0.65px black edge, painted behind the fill. Primary filled buttons retain their normal dark text. SVG icons are excluded from this glyph treatment.
+- Increased contrast uses semantic text roles for the selected mode. An older hard-coded pale artist-caption override was removed because it failed in light mode.
+- Existing v2 preferences gain `colorMode` without resetting other choices. Older beta.7 records infer their previous mode once; changing tint afterward does not infer a new mode.
 
-The owner asked for one transparency level throughout the app, with text changing instead of covering the glass with dark patches. Beta.7 replaces that earlier treatment.
+## Transparency flash and player-edge fix
 
-## Current treatment
+The previous implementation rebuilt SVG mask images as data URLs. Until a replacement mask decoded, a material could disappear. A controlled 120ms resource delay reproduced the report exactly: the window and both player edges dropped from `[128,128,128]` to `[0,0,0]` over a black backdrop.
 
-1. **One alpha.** Sidebar, content, top bar, artwork area, player, and popovers use the same selected material opacity. Structural containers have no separate dark fills. Opaque mode uses alpha 1 everywhere.
-2. **Readable ink/material pair.** At 50–69% tint, white glass uses very dark text. At 70–100%, Duskfox dark glass uses near-white text. These pairs retain contrast over the controlled darkest/brightest backdrops without reading the desktop. The accent preference is unchanged; important accent-colored text uses a readable ink role, while accent fills/marks retain the selected color.
-3. **No doubled opacity under floating panels.** `material.ts` observes element bounds and creates SVG coverage masks. The window material has a cutout beneath floating surfaces; a lower floating material has cutouts beneath higher ones. Each visible point receives one material tint, including the floating player. Floating surfaces can blur the content underneath without adding an opaque reading field.
-4. **Contrast preferences.** OS increased contrast strengthens text/borders without adding opaque patches or rewriting preferences. Reduced transparency/100% tint removes material blur and stays opaque. Queue history uses image hierarchy instead of faded text.
-5. **Bounded sidebar.** The application grid has a bounded row. Saved playlists get their own flex/scroll area, separate from navigation and the fixed sidebar footer. At short heights the decorative tagline is hidden to leave more room for actual controls.
+`material.ts` now keeps inline SVG **clip paths**, updated in place. Each clip is the complement of one rounded cutout; intersecting these complements handles overlapping panels without adding the window material back into their overlap. There are no mask-image resources to load. Coordinates use the actual painted padding box, not the outer border, and account for the reveal scale.
 
-The coverage observer reacts to layout, resize, opening/closing, and animation completion; it does not run a continuous background-sampling loop or request screen-capture access. Duskfox remains the palette, and saved appearance values stay in version 2.
+The window, player, artwork area, content, and popovers still receive one material layer per point. Appearance has a separate inner scroller so its background does not move away when settings scroll. Geometry updates are bounded to layout changes and active reveals; no desktop pixels are read and no idle sampling loop is used.
 
-## Reproduce the checks
+## Menu behavior
+
+Appearance, queue, quality, and account popovers share `popover.ts`: outside pointer clicks and Escape close them; inside clicks stay inside; trigger clicks toggle normally. Dismissal does not prevent the underlying control's click. Opening another menu also closes the previous one for keyboard users.
+
+## Checks and interpretation
 
 ```sh
-npm run test:ui -- tests/ui/sidebar-and-material.spec.js tests/ui/glass-contrast.spec.js tests/ui/popover-transparency.spec.js
-# With Playwright Chromium installed:
-VESSEL_UI_BROWSER=chromium npm run test:ui -- tests/ui/sidebar-and-material.spec.js tests/ui/glass-contrast.spec.js tests/ui/popover-transparency.spec.js
+npm run test:ui
+VESSEL_UI_BROWSER=chromium npm run test:ui -- tests/ui/appearance-controls.spec.js tests/ui/popover-behavior.spec.js tests/ui/sidebar-and-material.spec.js tests/ui/glass-contrast.spec.js tests/ui/popover-transparency.spec.js
 ```
 
-- The sidebar regression uses **80 saved playlists**, actual wheel scrolling, a 1100×700 window, and a 420×800 layout. The last playlist can be reached while navigation and Appearance remain in the viewport, and Appearance opens normally.
-- Rendered blank-material samples compare sidebar, content, top bar, player, and Appearance over white/black backdrops at 50%, 70%, and 100%. They remain within six RGB levels per channel; reading-region opacity is not used as a substitute for matching material.
-- Text checks cover Home/search over white, dark, and patterned backdrops at **50%, 69%, 70%, 75%, 90%, and 100%**. They include the automatic light/dark boundary, accents, account errors, queue/quality captions, and increased contrast.
-- Normal text requires **4.5:1**; large page headings require **3:1**, following [WCAG contrast minimum](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). The observed minimum across the latest Home/search samples is **5.05:1**. Muted/secondary text is not faded to achieve hierarchy.
+- Explicit modes are checked at 50%, 69%, 70%, 75%, 90%, and 100% over white, dark, and patterned backgrounds. Mode, tint, palette, and migration/persistence have independent assertions.
+- The flash regression delays old mask-image loads, samples opening/settled frames and both player edges, and scrolls Appearance. It fails with the old image masks and passes with inline vector clips.
+- Sidebar coverage retains 80 playlists, actual wheel scrolling, and reachable controls at 1100×700 and 420×800.
+- Text checks require 4.5:1 for ordinary text and 3:1 for large headings. The final Home/search samples measure at least **5.05:1**, using the outline-aware model where the glyph edge is active.
 
-`tests/ui/contrast.js` compares declared text colors with actual screenshot backgrounds, temporarily hiding the sampled text. It excludes clipped/covered text and does not treat anti-aliased glyph edges as the foreground color.
+`tests/ui/contrast.js` samples actual rendered backgrounds with glyph fill/stroke hidden. It reads the actual text-fill color and admits an outline only when it is at least 0.5px, near-opaque, painted behind the fill, and itself contrasts with the fill. The comparison then uses the stronger visible glyph edge/fill against the background. A regression removes the stroke and verifies that the unprotected dark-mode text fails on the bright fixture; it does not merely assume that having a shadow is enough.
 
-These are rendered browser checks with controlled account/playback replies, not native desktop screenshots or measurements of compositor power use. Current native packaging/window checks and remaining hardware limits are recorded in [verification](verification.md).
+These are declared-glyph/background comparisons, not an audit of every anti-aliased display pixel or native desktop compositor. Native window/package results and remaining hardware/account limits are recorded in [verification](verification.md).

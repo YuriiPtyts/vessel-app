@@ -1946,20 +1946,13 @@ tr.current .cover-action {
   }
 }
 @media (prefers-contrast: more) {
-  :root {
-    --muted: #c4b6d3;
-    --faint: #b3a1c5;
-    --border: #c0abd744;
-  }
   .song-artist,
   .album-cell,
-  .time-cell {
-    color: #b8a9c9 !important;
-  }
+  .time-cell,
   .sidebar-label {
-    color: #b8a9c9;
+    color: var(--theme-foreground);
   }
   .search-field {
-    border-color: #baa4d466;
+    border-color: var(--border);
   }
 }

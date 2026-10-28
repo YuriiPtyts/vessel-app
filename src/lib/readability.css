@@ -1,7 +1,7 @@
 /* One material plane for the whole window. Structural surfaces stay clear so
    the chosen tint is never compounded by darker sidebar/card/reading layers.
-   At 50–69% tint, light glass and dark ink retain contrast over both light and
-   dark desktops; at 70–100%, Duskfox's dark material uses near-white ink. */
+   Light/dark is an explicit preference. Tint changes alpha; high-transparency
+   readability treatment changes glyphs only, never the chosen material. */
 .app-frame {
   --material-rgb: var(--theme-bg-rgb);
   --material-alpha: var(--glass-opacity);
@@ -32,6 +32,61 @@
   --theme-border: #5b526d;
   --border: rgb(var(--theme-foreground-rgb) / 0.25);
 }
+.app-frame.contrast-ink {
+  -webkit-text-stroke: 0.65px #000;
+  paint-order: stroke fill;
+}
+.app-frame.contrast-ink:not(.light-glass) {
+  -webkit-text-fill-color: #fff;
+}
+.app-frame.contrast-ink
+  :is(.primary-button, .main-transport, .accent-swatches button > span, .toggle.on) {
+  -webkit-text-fill-color: currentColor;
+}
+.app-frame.light-glass.contrast-ink {
+  -webkit-text-stroke: 0.15px currentColor;
+}
+.app-frame svg {
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+}
+.appearance-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.appearance-modes > button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--theme-text);
+}
+.appearance-modes > button[aria-pressed='true'] {
+  border-color: var(--accent-ink);
+  box-shadow: inset 0 -2px var(--accent);
+}
+.theme-mode-trigger {
+  flex-shrink: 0;
+}
+.app-frame .appearance-popover {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: visible;
+}
+.appearance-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 21px;
+  border-radius: inherit;
+  scrollbar-width: thin;
+}
 .app-frame.opaque {
   --material-alpha: 1;
   background: transparent;
@@ -39,10 +94,7 @@
 .app-frame::before {
   display: block;
   background: rgb(var(--material-rgb) / var(--material-alpha));
-  -webkit-mask-image: var(--material-mask, none);
-  mask-image: var(--material-mask, none);
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
+  clip-path: var(--material-clip, none);
 }
 .app-frame
   :is(
@@ -72,6 +124,9 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+.app-frame [data-material-overlay] > * {
+  opacity: var(--reveal-content-opacity, 1);
+}
 .app-frame :is(.floating-player, .appearance-popover, .music-popover, .quality-popover)::before {
   content: '';
   position: absolute;
@@ -81,10 +136,7 @@
   background: rgb(var(--material-rgb) / var(--material-alpha));
   -webkit-backdrop-filter: blur(24px);
   backdrop-filter: blur(24px);
-  -webkit-mask-image: var(--material-mask, none);
-  mask-image: var(--material-mask, none);
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
+  clip-path: var(--material-clip, none);
 }
 @media (max-width: 1179px) {
   .app-frame .now-playing-panel::before {
@@ -96,8 +148,7 @@
     background: rgb(var(--material-rgb) / var(--material-alpha));
     -webkit-backdrop-filter: blur(24px);
     backdrop-filter: blur(24px);
-    -webkit-mask-image: var(--material-mask, none);
-    mask-image: var(--material-mask, none);
+    clip-path: var(--material-clip, none);
   }
 }
 .app-frame.opaque [data-material-overlay]::before {
@@ -174,7 +225,8 @@
   opacity: 0.6;
 }
 @media (prefers-contrast: more) {
-  .app-frame {
+  .app-frame,
+  .app-frame.light-glass {
     --theme-secondary: var(--theme-foreground);
     --border: rgb(var(--theme-foreground-rgb) / 0.5);
   }
@@ -182,6 +234,7 @@
 @media (prefers-reduced-transparency: reduce) {
   .app-frame {
     --material-alpha: 1;
+    -webkit-text-stroke: 0;
   }
   .app-frame [data-material-overlay]::before {
     -webkit-backdrop-filter: none;

@@ -10,6 +10,7 @@ export const ACCENTS = [
 
 export interface AppearancePreferences {
   version: 2;
+  colorMode: 'light' | 'dark';
   accent: 'rose' | 'iris' | 'foam' | 'gold';
   glassOpacity: number;
   density: 'comfortable' | 'compact';
@@ -21,6 +22,7 @@ export interface AppearancePreferences {
 export function defaultAppearance(reducedTransparency = false): AppearancePreferences {
   return {
     version: 2,
+    colorMode: reducedTransparency ? 'dark' : 'light',
     accent: 'rose',
     glassOpacity: 50,
     density: 'comfortable',
@@ -34,9 +36,8 @@ export function usesOpaqueMaterial(preferences: AppearancePreferences): boolean 
   return preferences.reducedTransparency || preferences.glassOpacity === GLASS_TINT_MAX;
 }
 
-/** Light material keeps dark ink readable at the most transparent tint values. */
 export function usesLightGlass(preferences: AppearancePreferences): boolean {
-  return !usesOpaqueMaterial(preferences) && preferences.glassOpacity < 70;
+  return preferences.colorMode === 'light';
 }
 
 export function normalizeAppearance(value: unknown, systemReduced = false): AppearancePreferences {
@@ -44,18 +45,31 @@ export function normalizeAppearance(value: unknown, systemReduced = false): Appe
   if (typeof value !== 'object' || value === null) return defaults;
   const data: Record<string, unknown> = Object.fromEntries(Object.entries(value));
   if (data.version !== undefined && data.version !== 1 && data.version !== 2) return defaults;
+  const glassOpacity =
+    typeof data.glassOpacity === 'number' && Number.isFinite(data.glassOpacity)
+      ? data.version === 1 && data.glassOpacity === 56
+        ? defaults.glassOpacity
+        : Math.round(Math.max(GLASS_TINT_MIN, Math.min(GLASS_TINT_MAX, data.glassOpacity)))
+      : defaults.glassOpacity;
+  const reducedTransparency =
+    typeof data.reducedTransparency === 'boolean'
+      ? data.reducedTransparency
+      : defaults.reducedTransparency;
   return {
     version: 2,
+    // Infer the old beta.7 appearance once, then keep the explicit choice when
+    // tint/opaque mode changes. Other saved preferences retain their v2 values.
+    colorMode:
+      data.colorMode === 'light' || data.colorMode === 'dark'
+        ? data.colorMode
+        : !reducedTransparency && glassOpacity < 70
+          ? 'light'
+          : 'dark',
     accent:
       data.accent === 'iris' || data.accent === 'foam' || data.accent === 'gold'
         ? data.accent
         : 'rose',
-    glassOpacity:
-      typeof data.glassOpacity === 'number' && Number.isFinite(data.glassOpacity)
-        ? data.version === 1 && data.glassOpacity === 56
-          ? defaults.glassOpacity
-          : Math.round(Math.max(GLASS_TINT_MIN, Math.min(GLASS_TINT_MAX, data.glassOpacity)))
-        : defaults.glassOpacity,
+    glassOpacity,
     density: data.density === 'compact' ? 'compact' : 'comfortable',
     sidebarCollapsed:
       typeof data.sidebarCollapsed === 'boolean'
@@ -63,10 +77,7 @@ export function normalizeAppearance(value: unknown, systemReduced = false): Appe
         : defaults.sidebarCollapsed,
     showNowPlaying:
       typeof data.showNowPlaying === 'boolean' ? data.showNowPlaying : defaults.showNowPlaying,
-    reducedTransparency:
-      typeof data.reducedTransparency === 'boolean'
-        ? data.reducedTransparency
-        : defaults.reducedTransparency,
+    reducedTransparency,
   };
 }
 

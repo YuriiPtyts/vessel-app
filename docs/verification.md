@@ -1,5 +1,14 @@
 # Verification log
 
+## Independent appearance and stable popovers beta.8 (2026-10-28)
+
+- Reproduced the tint/mode coupling: moving 69→70% changed material RGB from `[255,255,255]` to `[35,33,54]`. Explicit Light/Dark controls and a top-bar shortcut now keep material RGB fixed through 50–100%. Legacy 50%/80% records keep their previous appearance once and store `colorMode` without resetting other v2 choices. High transparency changes glyph fill/stroke only; material, icon, and border colors have separate regression assertions.
+- Reproduced the distorted genie at quarter progress: width ratio **0.856**, height ratio **0.566**. The 220ms replacement scales uniformly from 96.5–100%, travels at most 8px, and fades content together while keeping material opacity at 1. Tests sample quarter/half/three-quarter bounds, settled state, and reduced motion.
+- Reproduced the full transparency flash with a **120ms mask-resource delay**: window and both player edges changed from `[128,128,128]` to `[0,0,0]`. Inline vector clips now update in place, use painted padding-box bounds, and intersect cutout complements. Opening, settled, and scrolled-appearance samples retain their background; no mask image decoding is involved.
+- Outside pointer clicks and Escape dismiss Appearance, queue, quality, and account popovers. Inside clicks, repeat-trigger toggles, keyboard menu switching, and the outside control's own action pass. Device likes navigation/local heart actions are removed; tests cover account-only likes, cleared account data after sign-out/late replies, guest playback/history, and no local-like writes.
+- **52 mocked WebKit UI tests** and **28 focused Chromium tests** pass. Both explicit modes pass Home/search checks at six tint values over bright, dark, and patterned backdrops, including outline-aware glyph contrast where enabled. The final measured minimum is **5.05:1**. The glyph audit is red-capable when the protective stroke is removed. A legacy hard-coded pale high-contrast caption override was corrected for light mode.
+- Zero Svelte errors/warnings, production frontend, Rust formatting, Clippy with warnings denied (default and diagnostic features), **44 macOS library tests**, IPC-origin, and non-network application checks pass. Browser fixtures are separate from live provider/native verification.
+
 ## Reachable sidebar and shared material beta.7 (2026-10-28)
 
 - Reproduced the reported sidebar failure with 80 account playlists: Appearance had viewport intersection ratio 0. The implicit grid row grew with the navigation contents. A bounded row plus a separate playlist scroll section now passes actual wheel scrolling at 1100×700 and retains reachable Appearance/navigation at 420×800.

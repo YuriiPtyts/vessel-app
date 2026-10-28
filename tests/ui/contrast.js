@@ -39,13 +39,18 @@ export async function renderedTextContrast(page, selectors) {
         for (const range of ranges) {
           const style = getComputedStyle(range.element, pseudo);
           context.clearRect(0, 0, 1, 1);
-          context.fillStyle = style.color;
+          context.fillStyle = style.webkitTextFillColor || style.color;
           context.fillRect(0, 0, 1, 1);
           const color = [...context.getImageData(0, 0, 1, 1).data];
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = style.webkitTextStrokeColor;
+          context.fillRect(0, 0, 1, 1);
+          const outline = [...context.getImageData(0, 0, 1, 1).data];
           let opacity = 1;
           for (let ancestor = range.element; ancestor; ancestor = ancestor.parentElement)
             opacity *= Number(getComputedStyle(ancestor).opacity);
           color[3] = (color[3] / 255) * opacity;
+          outline[3] = (outline[3] / 255) * opacity;
           let x = Math.max(box.left, range.rect.left),
             y = Math.max(box.top, range.rect.top);
           let right = Math.min(box.right, range.rect.right),
@@ -72,6 +77,10 @@ export async function renderedTextContrast(page, selectors) {
               elementId: id,
               text: range.text.slice(0, 35),
               color,
+              outline,
+              outlined:
+                parseFloat(style.webkitTextStrokeWidth) >= 0.5 &&
+                style.paintOrder.startsWith('stroke'),
               minimum,
               x,
               y,
@@ -88,6 +97,7 @@ export async function renderedTextContrast(page, selectors) {
     [data-contrast-target], [data-contrast-target] *, [data-contrast-target]::placeholder {
       color: transparent !important; -webkit-text-fill-color: transparent !important;
       text-shadow: none !important;
+      -webkit-text-stroke-width: 0 !important;
     }
   `,
   });
@@ -113,6 +123,11 @@ export async function renderedTextContrast(page, selectors) {
               return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
             })
             .reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
+        const contrast = (a, b) => {
+          const x = luminance(a),
+            y = luminance(b);
+          return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+        };
         return samples
           .map((sample) => {
             const element = document.querySelector(`[data-contrast-ink="${sample.elementId}"]`);
@@ -134,13 +149,30 @@ export async function renderedTextContrast(page, selectors) {
                 const foreground = background.map(
                   (value, i) => sample.color[i] * sample.color[3] + value * (1 - sample.color[3]),
                 );
-                const a = luminance(foreground),
-                  b = luminance(background);
-                ratio = Math.min(ratio, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05));
+                let visibleContrast = contrast(foreground, background);
+                // A real glyph outline is part of the text treatment, not a
+                // panel background. Count it only when substantial, opaque,
+                // painted behind the fill, and contrasting with the fill.
+                if (sample.outlined && sample.outline[3] >= 0.9) {
+                  const outline = background.map(
+                    (value, i) =>
+                      sample.outline[i] * sample.outline[3] + value * (1 - sample.outline[3]),
+                  );
+                  if (contrast(foreground, outline) >= sample.minimum) {
+                    visibleContrast = Math.max(visibleContrast, contrast(outline, background));
+                  }
+                }
+                ratio = Math.min(ratio, visibleContrast);
               }
             }
             return Number.isFinite(ratio)
-              ? { selector: sample.selector, text: sample.text, ratio, minimum: sample.minimum }
+              ? {
+                  selector: sample.selector,
+                  text: sample.text,
+                  ratio,
+                  minimum: sample.minimum,
+                  outlined: sample.outlined,
+                }
               : null;
           })
           .filter(Boolean);

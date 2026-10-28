@@ -10,6 +10,8 @@ The owner explicitly rejected the link-inspection lab as the main experience. No
 
 The owner requested real-time volume during dragging, a more transparent glass treatment, their current Zed theme's palette as the default, persistent interface customization, and prominent track artwork. The detected palette is Duskfox – blurred. Additional complete themes are an explicit future goal; see themes.md. The owner also requested that completed, verified changes be committed and pushed automatically; this workflow is recorded in AGENTS.md.
 
+On 2026-10-28 the owner asked for independent light/dark buttons: tint must change transparency only, with readability changes limited to glyphs. They also requested proportional panel opening, outside-click closing for menus, removal of Device likes, and a fix for material/player-edge flashes. Beta.8 implements those choices while retaining prior data files and other preferences.
+
 ## Provider recommendations, fast startup, and desktop glass
 
 The owner rejected the fixed artist spotlight and asked for YouTube Music's actual recommendations. Home now reads the guest `FEmusic_home` response, preserving provider shelves and order; recommendation collections open their real track lists. Do not substitute hard-coded artists or mood searches when the feed is unavailable. Guest recommendations must remain clearly distinct from signed-in personalization.

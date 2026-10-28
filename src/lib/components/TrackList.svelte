@@ -10,7 +10,7 @@
     pendingId,
     likedIds,
     likesDisabled = false,
-    likeDestination = 'Saved only on this device',
+    likeDestination = 'YouTube Music likes',
     onplay,
     onlike,
     onartist,

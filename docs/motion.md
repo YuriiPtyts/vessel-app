@@ -1,9 +1,9 @@
-# Genie-style surface reveals
+# Balanced surface reveals
 
-Appearance, account, queue, audio-quality, and now-playing panels use the shared `genie` transition in `src/lib/motion.ts` when they appear. The 360 ms reveal unfurls from an anchor corner using curved clipping, perspective, separate horizontal/vertical expansion, and a short fade. It consumes the existing theme materials and adds no blur layer.
+Appearance, account, queue, audio-quality, and now-playing panels use `panelReveal` in `src/lib/motion.ts`. The old genie stretched width and height at different rates and bent the clipping shape. At one reproduced quarter-progress point it was 85.6% wide but only 56.6% tall.
 
-The effect runs once on mounting a surface. Playback snapshots and track metadata updates do not repeatedly animate an open panel. Closing is immediate, without leaving focusable controls in an outro. Only transient surfaces animate, rather than the entire window or every song row.
+The replacement is a **220 ms** anchored reveal with uniform **96.5–100% scale**, at most **8px** of travel, and a shared content fade. There is no perspective, rotation, funnel clipping, or separate timing for sections. The background keeps its selected alpha while the content fades, so the material does not become clear or lose its blur mid-reveal.
 
-`prefers-reduced-motion: reduce` makes the reveal immediate. This follows the operating-system preference and introduces no new stored appearance setting.
+Opening runs once per mounted panel. Playback updates do not reanimate it. Closing is immediate. Reduced motion makes opening immediate too.
 
-WebKit contract checks inspect actual Web Animations keyframes, a paused curved reveal, the settled layout, immediate closing, and reduced-motion behavior. The mid-reveal screenshot is a controlled renderer/IPC fixture, not a native compositor or power measurement.
+Live inline vector clips follow the short animation and stop updating when it finishes; there is no idle animation loop. The renderer checks compare actual width/height ratios at 25%, 50%, and 75%, assert stable material opacity, inspect all shared popup reveals, and check settled layout, closing, and reduced motion. Screenshots are controlled UI fixtures, not native compositor/power measurements.
