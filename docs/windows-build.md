@@ -38,3 +38,7 @@ The downloaded installer is **85,032,286 bytes**, and its SHA-256 matches `SHA25
 ### Beta.4 readability update
 
 [Native Windows CI run 40619153912](https://github.com/YuriiPtyts/vessel-app/actions/runs/40619153912) passes the same native verification for the glass-readability build, including actual WebView2/IPC/SMTC, installed-runtime checks, normal app close, and uninstall. The Windows setup is **85,026,440 bytes** with a verified `SHA256SUMS-Windows` sidecar. The installer fixture now synchronizes with NSIS's asynchronous cleanup; the physical-audio/account scope is unchanged.
+
+### Beta.5 panel transparency update
+
+[Native Windows CI run 40623508110](https://github.com/YuriiPtyts/vessel-app/actions/runs/40623508110) is green for the shared Appearance/Queue tint update, including the normal installed application and uninstall checks. The Windows setup is **85,043,526 bytes**, with a verified SHA-256 sidecar. The panel alpha/contrast regression is part of the 24 mocked-WebKit UI checks; hardware/compositor and real-account scopes retain the limits above.
