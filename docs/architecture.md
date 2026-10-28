@@ -61,7 +61,7 @@ The frontend is organized into a shell and Artwork, TrackList, PlayerBar, QueueP
 
 `appearance.ts` validates and persists versioned presentation preferences. Palette tokens and material rules are separate; Duskfox is the only complete theme currently shipped. AppearancePanel controls tint/accent/density/sidebar/artwork and reduced transparency. NowPlayingPanel requests up to 512px artwork using only Google's known resize syntax; Artwork retries the original thumbnail once and retains that fallback across playback snapshots. No canvas extraction or continuously animated artwork is introduced.
 
-`readability.css` and semantic glass ink/material tokens protect text-bearing surfaces over adverse backgrounds. `appearance.ts` derives the extra local scrim from the existing tint without changing saved preferences. OS increased contrast strengthens the materials/text roles; the selected window tint and transparent main stage remain available. See [glass readability](glass-readability.md) for the actual rendered-background contrast regression and scope.
+`readability.css` uses one shared material alpha and semantic light/dark ink roles. `appearance.ts` selects light material/dark text below 70% tint and dark material/light text at 70–100%, without rewriting preferences. `material.ts` observes floating-surface geometry and builds SVG coverage masks so the window material is not painted again beneath a popover/player. Overlapping floating materials are likewise cut out beneath later ones. No desktop pixels are sampled. OS increased contrast strengthens text/borders. See [glass readability](glass-readability.md) for rendered-pixel and contrast regressions and scope.
 
 ## Closed-source packaging constraint
 

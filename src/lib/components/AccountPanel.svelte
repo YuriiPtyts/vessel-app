@@ -32,6 +32,7 @@
 
 <section
   class="music-popover account-popover"
+  data-material-overlay
   aria-label="Google account"
   in:genie={{ origin: 'top-right' }}
 >

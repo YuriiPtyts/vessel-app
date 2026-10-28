@@ -29,12 +29,13 @@
     defaultAppearance,
     loadAppearance,
     normalizeAppearance,
-    readingScrimOpacity,
+    usesLightGlass,
     saveAppearance,
     usesOpaqueMaterial,
     type AppearancePreferences,
   } from './lib/appearance';
   import { createVolumeControl } from './lib/volume';
+  import { unifiedMaterial } from './lib/material';
   import {
     cancelInspection,
     emptyPlayback,
@@ -718,13 +719,14 @@
 <svelte:head><title>Vessel — Your music, a little lighter.</title></svelte:head>
 
 <div
+  use:unifiedMaterial
   class="app-frame accent-{appearance.accent}"
   class:opaque={usesOpaqueMaterial(appearance)}
+  class:light-glass={usesLightGlass(appearance)}
   class:sidebar-compact={appearance.sidebarCollapsed}
   class:density-compact={appearance.density === 'compact'}
   class:with-now-playing={artworkVisible && viewportWidth >= 1180}
   style:--glass-opacity={appearance.glassOpacity / 100}
-  style:--reading-scrim={readingScrimOpacity(appearance)}
 >
   <div class="window-drag-region" data-tauri-drag-region></div>
   <aside class="sidebar" aria-label="Main navigation">
@@ -772,7 +774,9 @@
         aria-current={view === 'recent' ? 'page' : undefined}
         title="Recently played"><Clock3 size={18} /><span>Recently played</span></button
       >
-      {#if hasAccountCollection}
+    </nav>
+    {#if hasAccountCollection}
+      <section class="sidebar-playlists" aria-label="Saved playlists">
         <div class="account-playlists-heading">
           <p class="sidebar-label">YOUTUBE MUSIC PLAYLISTS</p>
           <button
@@ -787,43 +791,45 @@
             /></button
           >
         </div>
-        {#each accountLibrary.playlists as item (item.id)}
-          <button
-            class:active={view === 'collection' &&
+        <nav aria-label="YouTube Music playlists">
+          {#each accountLibrary.playlists as item (item.id)}
+            <button
+              class:active={view === 'collection' &&
+                collectionFromAccount &&
+                collection?.item.id === item.id}
+              aria-current={view === 'collection' &&
               collectionFromAccount &&
-              collection?.item.id === item.id}
-            aria-current={view === 'collection' &&
-            collectionFromAccount &&
-            collection?.item.id === item.id
-              ? 'page'
-              : undefined}
-            title={item.title}
-            onclick={() => void openCollection(item, false, true)}
-            ><ListMusic size={18} /><span>{item.title}</span></button
-          >
-        {/each}
-        {#if account.mode !== 'connected'}<p class="sidebar-library-status">
-            Reconnect your account to sync.
-          </p>
-        {:else if libraryLoading || accountLibrary.refreshing}<p
-            class="sidebar-library-status"
-            role="status"
-          >
-            Syncing your library…
-          </p>
-        {:else if libraryError || accountLibrary.playlistsError}<p
-            class="sidebar-library-status"
-            role="status"
-          >
-            Playlists could not sync. Refresh to retry.
-          </p>
-        {:else if accountLibrary.playlistsReady && !accountLibrary.playlists.length}<p
-            class="sidebar-library-status"
-          >
-            Saved playlists will appear here.
-          </p>{/if}
-      {/if}
-    </nav>
+              collection?.item.id === item.id
+                ? 'page'
+                : undefined}
+              title={item.title}
+              onclick={() => void openCollection(item, false, true)}
+              ><ListMusic size={18} /><span>{item.title}</span></button
+            >
+          {/each}
+          {#if account.mode !== 'connected'}<p class="sidebar-library-status">
+              Reconnect your account to sync.
+            </p>
+          {:else if libraryLoading || accountLibrary.refreshing}<p
+              class="sidebar-library-status"
+              role="status"
+            >
+              Syncing your library…
+            </p>
+          {:else if libraryError || accountLibrary.playlistsError}<p
+              class="sidebar-library-status"
+              role="status"
+            >
+              Playlists could not sync. Refresh to retry.
+            </p>
+          {:else if accountLibrary.playlistsReady && !accountLibrary.playlists.length}<p
+              class="sidebar-library-status"
+            >
+              Saved playlists will appear here.
+            </p>{/if}
+        </nav>
+      </section>
+    {/if}
     <div class="sidebar-bottom">
       <div class="native-note">
         <span class="little-star">✳</span>

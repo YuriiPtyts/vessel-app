@@ -1,126 +1,169 @@
-/* Text-bearing materials have their own contrast floor; gutters retain the
-   selected window transparency. These are static tints, not extra blur layers. */
+/* One material plane for the whole window. Structural surfaces stay clear so
+   the chosen tint is never compounded by darker sidebar/card/reading layers.
+   At 50–69% tint, light glass and dark ink retain contrast over both light and
+   dark desktops; at 70–100%, Duskfox's dark material uses near-white ink. */
 .app-frame {
-  --reading-surface-opacity: var(--reading-scrim, 0.8);
+  --material-rgb: var(--theme-bg-rgb);
+  --material-alpha: var(--glass-opacity);
+  --theme-foreground: var(--theme-dark-glass-ink);
+  --theme-text: var(--theme-dark-glass-ink);
+  --theme-secondary: var(--theme-dark-glass-secondary);
+  --theme-error: var(--theme-dark-glass-error);
   --theme-muted: var(--theme-secondary);
+  --theme-glass-secondary: var(--theme-secondary);
   --muted: var(--theme-secondary);
   --faint: var(--theme-secondary);
+  --accent-ink: var(--theme-foreground);
+  color: var(--theme-text);
+  background: transparent;
 }
-.app-frame:not(.opaque) {
-  --theme-secondary: var(--theme-glass-secondary);
-  --theme-error: var(--theme-glass-error);
+.app-frame.light-glass {
+  color-scheme: light;
+  --material-rgb: var(--theme-light-glass-rgb);
+  --theme-surface: #fff;
+  --theme-surface-rgb: 255 255 255;
+  --theme-elevated: #f0edf8;
+  --theme-elevated-rgb: 240 237 248;
+  --theme-foreground-rgb: 5 4 9;
+  --theme-foreground: var(--theme-light-glass-ink);
+  --theme-text: var(--theme-light-glass-ink);
+  --theme-secondary: var(--theme-light-glass-secondary);
+  --theme-error: var(--theme-light-glass-error);
+  --theme-border: #5b526d;
+  --border: rgb(var(--theme-foreground-rgb) / 0.25);
 }
-
-.app-frame:not(.opaque) :is(.appearance-popover, .queue-popover) {
-  background: rgb(var(--theme-surface-rgb) / var(--glass-opacity));
+.app-frame.opaque {
+  --material-alpha: 1;
+  background: transparent;
 }
-
-/* Popover shells share the window tint; their reading groups keep the same
-   contrast floor as the main content without making the entire panel opaque. */
-.app-frame:not(.opaque)
-  :is(.appearance-popover, .queue-popover)
+.app-frame::before {
+  display: block;
+  background: rgb(var(--material-rgb) / var(--material-alpha));
+  -webkit-mask-image: var(--material-mask, none);
+  mask-image: var(--material-mask, none);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+.app-frame
   :is(
-    .popover-heading,
-    .appearance-section,
-    .appearance-option,
-    .reset-appearance,
-    .queue-seed,
-    .queue-error,
-    .queue-progress,
-    .queue-footer,
-    .queue-empty
-  ) {
-  position: relative;
-  isolation: isolate;
-}
-.app-frame:not(.opaque)
-  :is(.appearance-popover, .queue-popover)
-  :is(
-    .popover-heading,
-    .appearance-section,
-    .appearance-option,
-    .reset-appearance,
-    .queue-seed,
-    .queue-error,
-    .queue-progress,
-    .queue-footer,
-    .queue-empty
-  )::before {
-  content: '';
-  position: absolute;
-  inset: -5px -8px;
-  z-index: -1;
-  border-radius: 10px;
-  background: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
-  pointer-events: none;
-}
-.app-frame:not(.opaque) .queue-tracks {
-  background: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
-  border-radius: 10px;
-}
-
-.app-frame:not(.opaque)
-  :is(.sidebar, .topbar, .now-playing-panel, .provider-shelf, .floating-player, .track-table) {
-  background-color: rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
-}
-
-/* Nested white washes compound over a bright desktop. A tonal card keeps its
-   sheen/border while its metadata and hover state retain a dark reading field. */
-.app-frame:not(.opaque) .provider-card {
-  background: rgb(var(--material-reading-rgb) / 0.18);
-}
-.app-frame:not(.opaque) .provider-card:hover,
-.app-frame:not(.opaque) .provider-card:focus-visible {
-  background: rgb(var(--theme-selection-rgb) / 0.2);
-}
-
-.app-frame:not(.opaque) .filter-pills button.chosen {
-  background: color-mix(in srgb, var(--accent) 8%, var(--theme-surface));
-}
-.app-frame:not(.opaque) .track-table tr.current,
-.app-frame:not(.opaque) .track-table tr.pending {
-  background: color-mix(in srgb, rgb(var(--theme-selection-rgb)) 20%, var(--theme-surface));
-}
-
-.app-frame:not(.opaque)
-  :is(
-    .provider-home-heading,
-    .page-heading,
-    .collection-heading,
-    .provider-collection-heading,
-    .result-toolbar,
-    .search-welcome,
-    .empty-collection,
+    .sidebar,
+    .main-stage,
+    .topbar,
+    .now-playing-panel,
+    .floating-player,
+    .provider-shelf,
+    .provider-card,
+    .track-table,
+    .appearance-popover,
+    .music-popover,
+    .quality-popover,
+    .theme-preview,
+    .queue-tracks,
+    .search-field,
+    .feed-scope,
+    .connection-status,
     .notice
   ) {
-  position: relative;
-  isolation: isolate;
+  background: transparent;
+  box-shadow: none;
 }
-
-.app-frame:not(.opaque)
-  :is(
-    .provider-home-heading,
-    .page-heading,
-    .collection-heading,
-    .provider-collection-heading,
-    .result-toolbar,
-    .search-welcome,
-    .empty-collection,
-    .notice
-  )::before {
+.app-frame [data-material-overlay] {
+  isolation: isolate;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.app-frame :is(.floating-player, .appearance-popover, .music-popover, .quality-popover)::before {
   content: '';
   position: absolute;
-  inset: -8px -12px;
+  inset: 0;
   z-index: -1;
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgb(var(--theme-foreground-rgb) / 0.03), transparent 65%),
-    rgb(var(--material-reading-rgb) / var(--reading-surface-opacity));
-  box-shadow: inset 0 1px rgb(var(--theme-foreground-rgb) / 0.08);
-  pointer-events: none;
+  border-radius: inherit;
+  background: rgb(var(--material-rgb) / var(--material-alpha));
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  -webkit-mask-image: var(--material-mask, none);
+  mask-image: var(--material-mask, none);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
 }
-
-/* Keep the past-item hierarchy in artwork/color, not faded text. */
+@media (max-width: 1179px) {
+  .app-frame .now-playing-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: rgb(var(--material-rgb) / var(--material-alpha));
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    -webkit-mask-image: var(--material-mask, none);
+    mask-image: var(--material-mask, none);
+  }
+}
+.app-frame.opaque [data-material-overlay]::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.app-frame :is(.secondary-button, .filter-pills button, .quality-option, .provider-card):hover,
+.app-frame :is(.icon-button, .text-button):hover:not(:disabled) {
+  color: var(--theme-foreground);
+  background: rgb(var(--theme-foreground-rgb) / 0.025);
+}
+.app-frame :is(.secondary-button, .filter-pills button, .theme-preview, .queue-empty) {
+  background: transparent;
+}
+.app-frame.light-glass .appearance-section select {
+  background: transparent;
+}
+.app-frame
+  :is(
+    .sidebar nav > button.active,
+    .sidebar nav > button.active svg,
+    .sidebar nav small,
+    .filter-pills button.chosen,
+    .quality-option.selected,
+    .queue-tracks li.current,
+    .track-table tr.current .song-title,
+    .track-table tr.current .number-cell,
+    .text-button,
+    .icon-button.liked,
+    .like-button.liked,
+    .queue-trigger.selected,
+    .feed-scope,
+    .theme-default-badge,
+    .listening-detail,
+    .guest-avatar,
+    .provider-home-heading h1 > span
+  ) {
+  color: var(--accent-ink);
+}
+.app-frame
+  :is(.sidebar nav > button.active, .filter-pills button.chosen, .quality-option.selected) {
+  background: transparent;
+  border-color: var(--accent-ink);
+}
+.app-frame :is(.track-table tr.current, .track-table tr.pending, .queue-tracks li.current) {
+  background: transparent;
+  box-shadow: inset 3px 0 var(--accent);
+}
+.app-frame .track-table tbody tr:hover,
+.app-frame .sidebar nav > button:hover,
+.app-frame .queue-tracks li:hover {
+  background: rgb(var(--theme-foreground-rgb) / 0.025);
+}
+.app-frame :is(.primary-button, .main-transport, .accent-swatches button > span, .toggle.on) {
+  color: #15111f;
+}
+.app-frame
+  :is(
+    .native-note p,
+    .native-note p span,
+    .settings-trigger,
+    .sidebar-library-status,
+    .account-library-toolbar
+  ) {
+  color: var(--theme-secondary);
+}
 .queue-tracks li.past {
   opacity: 1;
 }
@@ -130,15 +173,18 @@
 .queue-tracks li.past .queue-art {
   opacity: 0.6;
 }
-
 @media (prefers-contrast: more) {
-  .app-frame:not(.opaque),
-  .app-frame.opaque {
-    --reading-surface-opacity: 1;
+  .app-frame {
     --theme-secondary: var(--theme-foreground);
-    --theme-muted: var(--theme-foreground);
-    --muted: var(--theme-foreground);
-    --faint: var(--theme-foreground);
-    --border: rgb(var(--theme-foreground-rgb) / 0.3);
+    --border: rgb(var(--theme-foreground-rgb) / 0.5);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app-frame {
+    --material-alpha: 1;
+  }
+  .app-frame [data-material-overlay]::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

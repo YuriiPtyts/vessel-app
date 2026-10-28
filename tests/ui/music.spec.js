@@ -464,9 +464,9 @@ test('glass tint starts at 50%, clamps old low values, and is opaque at 100%', a
   await expect(frame).toHaveClass(/density-compact/);
   await setTint(100);
   await expect(frame).toHaveClass(/opaque/);
-  expect(await frame.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-    'rgb(35, 33, 54)',
-  );
+  expect(
+    await frame.evaluate((element) => getComputedStyle(element, '::before').backgroundColor),
+  ).toBe('rgb(35, 33, 54)');
   await expect
     .poll(() =>
       page.evaluate(

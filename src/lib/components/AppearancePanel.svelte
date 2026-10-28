@@ -23,6 +23,7 @@
 
 <section
   class="appearance-popover"
+  data-material-overlay
   aria-label="Appearance settings"
   in:genie={{ origin: 'bottom-left' }}
 >
@@ -75,7 +76,10 @@
       oninput={(event) => onchange({ glassOpacity: event.currentTarget.valueAsNumber }, false)}
       onchange={() => onchange({})}
     />
-    <p>50% keeps the glass readable. 100% is fully opaque.</p>
+    <p>
+      One tint across the app. Lower tint is more transparent and uses dark text on light glass. At
+      100%, the background is solid.
+    </p>
   </div>
   <button
     class="appearance-option"

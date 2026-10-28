@@ -34,11 +34,9 @@ export function usesOpaqueMaterial(preferences: AppearancePreferences): boolean 
   return preferences.reducedTransparency || preferences.glassOpacity === GLASS_TINT_MAX;
 }
 
-/** Reach a stable reading material without changing the user's window tint. */
-export function readingScrimOpacity(preferences: AppearancePreferences): number {
-  if (usesOpaqueMaterial(preferences)) return 0;
-  const tint = preferences.glassOpacity / 100;
-  return Math.max(0, (0.9 - tint) / (1 - tint));
+/** Light material keeps dark ink readable at the most transparent tint values. */
+export function usesLightGlass(preferences: AppearancePreferences): boolean {
+  return !usesOpaqueMaterial(preferences) && preferences.glassOpacity < 70;
 }
 
 export function normalizeAppearance(value: unknown, systemReduced = false): AppearancePreferences {

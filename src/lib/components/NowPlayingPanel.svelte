@@ -24,7 +24,7 @@
   } = $props();
 </script>
 
-<aside class="now-playing-panel" aria-label="Now playing artwork" in:genie>
+<aside class="now-playing-panel" aria-label="Now playing artwork" data-material-overlay in:genie>
   <div class="now-playing-panel-heading">
     <span class="eyebrow">NOW PLAYING</span><button
       class="icon-button"

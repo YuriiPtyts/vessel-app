@@ -13,6 +13,7 @@ Vessel-app/
 │   └── lib/
 │       ├── native.ts                     Typed Tauri commands, events, and public snapshots
 │       ├── volume.ts                     Latest-value slider writes; one request in flight
+│       ├── material.ts                   One material layer, including floating-surface cutouts
 │       ├── appearance.ts                 Local appearance preferences and migrations
 │       ├── artwork.ts                    Artwork sizing and fallback helpers
 │       ├── motion.ts                     Shared panel reveal transition

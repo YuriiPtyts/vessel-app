@@ -1,5 +1,12 @@
 # Verification log
 
+## Reachable sidebar and shared material beta.7 (2026-10-28)
+
+- Reproduced the reported sidebar failure with 80 account playlists: Appearance had viewport intersection ratio 0. The implicit grid row grew with the navigation contents. A bounded row plus a separate playlist scroll section now passes actual wheel scrolling at 1100×700 and retains reachable Appearance/navigation at 420×800.
+- Reproduced uneven glass: at 50% tint over white, sidebar `[49,47,61]` versus main gutter `[148,145,154]`. The old local reading layers compounded opacity. They are replaced by one shared material with geometry-based cutouts under floating surfaces, not an additional opaque reading layer. Light glass/dark ink is used at 50–69%; dark glass/light ink at 70–100%. Existing appearance values remain unchanged.
+- **35 mocked WebKit UI tests** and **11 focused Chromium UI tests** pass, including old account/playback/appearance flows. Rendered blank-material samples match within six RGB values per channel across sidebar/content/top bar/player/Appearance at 50%, 70%, and 100% over white/black. Text contrast passes at 50%, 69%, 70%, 75%, 90%, and 100% over white, dark, and patterned backgrounds; the lowest observed Home/search sample is **5.05:1**. Increased contrast, opaque mode, panel contrast, and saved preferences also pass. Screenshots of Home and open Appearance were reviewed. These fixtures do not certify native desktop compositing or power use.
+- Zero Svelte errors/warnings, production frontend, Rust formatting, default/diagnostic Clippy with warnings denied, **44 macOS library tests**, the IPC-origin test, and the non-network application check pass.
+
 ## Account library synchronization beta.6 (2026-10-28)
 
 - **44 ordinary macOS library tests**, the IPC-origin test, and the non-network integration check pass. Ten new account-library tests use authenticated loopback HTTP with dummy cookies: modern/legacy pagination, duplicate/unavailable liked IDs, saved playlist parameters/cursors staying private, explicit like/unlike and rejection handling, partial refresh retention/reconciliation, malformed/repeated cursors, guest request rejection, session expiry, and late refresh/rating acknowledgements after sign-out. A further regression keeps the selected song and following order when starting beyond the first 100 rows of a large collection.

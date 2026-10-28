@@ -90,7 +90,15 @@ export async function nativeFixture(page, options = {}) {
         playlistsReady: ready,
         liked: ready ? structuredClone(remoteLiked) : [],
         likedIds: ready ? remoteLiked.map((track) => track.id) : [],
-        playlists: ready ? [savedPlaylist] : [],
+        playlists: ready
+          ? options.playlistCount
+            ? Array.from({ length: options.playlistCount }, (_, index) => ({
+                ...savedPlaylist,
+                id: `VLsaved_${index + 1}`,
+                title: `Saved playlist ${index + 1}`,
+              }))
+            : [savedPlaylist]
+          : [],
         likesError: null,
         playlistsError: null,
       };

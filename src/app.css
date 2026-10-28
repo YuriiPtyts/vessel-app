@@ -132,6 +132,7 @@ kbd {
   min-height: 600px;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   position: relative;
   overflow: hidden;
   background: rgba(18, 17, 25, 0.85);
@@ -163,6 +164,7 @@ kbd {
   flex-direction: column;
   background: rgba(255, 255, 255, 0.018);
   min-width: 0;
+  min-height: 0;
 }
 .brand {
   display: flex;
@@ -237,6 +239,34 @@ kbd {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+.sidebar > nav {
+  flex-shrink: 0;
+  overflow: visible;
+}
+.sidebar-playlists {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.sidebar-playlists > nav {
+  flex: 1 1 0;
+  scrollbar-width: thin;
+}
+.sidebar-playlists .account-playlists-heading {
+  flex-shrink: 0;
+}
+@media (max-height: 800px) {
+  .sidebar .brand {
+    margin-bottom: 20px;
+  }
+  .sidebar .collection-label {
+    margin-top: 20px;
+  }
+  .sidebar .native-note {
+    display: none;
+  }
 }
 .sidebar nav > button > svg {
   flex-shrink: 0;

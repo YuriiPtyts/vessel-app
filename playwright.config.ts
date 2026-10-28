@@ -2,7 +2,15 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/ui',
-  use: { browserName: 'webkit', baseURL: 'http://127.0.0.1:1420', viewport: { width: 960, height: 900 } },
-  webServer: { command: 'npm run dev', url: 'http://127.0.0.1:1420', reuseExistingServer: !process.env.CI },
+  use: {
+    browserName: process.env.VESSEL_UI_BROWSER === 'chromium' ? 'chromium' : 'webkit',
+    baseURL: 'http://127.0.0.1:1420',
+    viewport: { width: 960, height: 900 },
+  },
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://127.0.0.1:1420',
+    reuseExistingServer: !process.env.CI,
+  },
   reporter: 'list',
 });

@@ -126,7 +126,7 @@
   onkeyup={finishVolumeKey}
 />
 
-<section class="floating-player" aria-label="Music player">
+<section class="floating-player" aria-label="Music player" data-material-overlay>
   <div class="now-playing">
     <button
       class="player-artwork-button"
@@ -259,7 +259,13 @@
         ><ChevronUp size={12} /></button
       >
       {#if qualityOpen}
-        <div class="quality-popover" role="region" aria-label="Audio quality options" in:genie>
+        <div
+          class="quality-popover"
+          role="region"
+          aria-label="Audio quality options"
+          data-material-overlay
+          in:genie
+        >
           <div class="popover-heading">
             <div>
               <span class="eyebrow">YOUR SOUND</span>

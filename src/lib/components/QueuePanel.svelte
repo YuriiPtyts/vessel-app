@@ -23,7 +23,7 @@
   } = $props();
 </script>
 
-<section class="music-popover queue-popover" aria-label="Play queue" in:genie>
+<section class="music-popover queue-popover" aria-label="Play queue" data-material-overlay in:genie>
   <div class="popover-heading">
     <div>
       <p class="eyebrow">LET THE MUSIC FIND YOU</p>

@@ -7,13 +7,13 @@ async function backgroundAlpha(panel) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d');
-    context.fillStyle = getComputedStyle(node).backgroundColor;
+    context.fillStyle = getComputedStyle(node, '::before').backgroundColor;
     context.fillRect(0, 0, 1, 1);
     return context.getImageData(0, 0, 1, 1).data[3] / 255;
   });
 }
 
-test('Appearance and Queue panels follow tint live while preserving readable and opaque modes', async ({
+test('Appearance and Queue share one window material with readable text and opaque mode', async ({
   page,
 }, testInfo) => {
   await nativeFixture(page);
@@ -27,6 +27,7 @@ test('Appearance and Queue panels follow tint live while preserving readable and
   });
   const appearance = page.getByRole('region', { name: 'Appearance settings', exact: true });
   const queue = page.getByRole('region', { name: 'Play queue', exact: true });
+  const frame = page.locator('.app-frame');
   for (const [tint, reduced] of [
     [50, false],
     [75, false],
@@ -40,13 +41,16 @@ test('Appearance and Queue panels follow tint live while preserving readable and
         node.value = String(tint);
         node.dispatchEvent(new Event('input', { bubbles: true }));
       }, tint);
+    await expect.poll(() => backgroundAlpha(frame)).toBeCloseTo(tint / 100, 2);
     await expect.poll(() => backgroundAlpha(appearance)).toBeCloseTo(tint / 100, 2);
     await appearance.getByRole('slider', { name: 'Glass tint', exact: true }).evaluate((node) => {
       node.dispatchEvent(new Event('change', { bubbles: true }));
     });
     if (reduced) await appearance.getByRole('switch', { name: /Reduce transparency/ }).click();
     const alpha = reduced ? 1 : tint / 100;
+    await expect.poll(() => backgroundAlpha(frame)).toBeCloseTo(alpha, 2);
     await expect.poll(() => backgroundAlpha(appearance)).toBeCloseTo(alpha, 2);
+    await page.screenshot({ path: testInfo.outputPath(`appearance-${tint}-${reduced}.png`) });
     const labels = await renderedTextContrast(page, [
       {
         selector:
@@ -55,9 +59,9 @@ test('Appearance and Queue panels follow tint live while preserving readable and
     ]);
     expect(labels.length).toBeGreaterThan(8);
     expect(labels.filter((sample) => sample.ratio + 0.01 < sample.minimum)).toEqual([]);
-    await page.screenshot({ path: testInfo.outputPath(`appearance-${tint}-${reduced}.png`) });
     await page.getByRole('button', { name: 'Close appearance settings', exact: true }).click();
     await page.getByRole('button', { name: 'Show play queue', exact: true }).click();
+    await expect.poll(() => backgroundAlpha(frame)).toBeCloseTo(alpha, 2);
     await expect.poll(() => backgroundAlpha(queue)).toBeCloseTo(alpha, 2);
     const tracks = await renderedTextContrast(page, [
       {
@@ -69,7 +73,7 @@ test('Appearance and Queue panels follow tint live while preserving readable and
     expect(tracks.length).toBeGreaterThan(5);
     expect(tracks.filter((sample) => sample.ratio + 0.01 < sample.minimum)).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath(`queue-${tint}-${reduced}.png`) });
-    const filter = await queue.evaluate((node) => getComputedStyle(node).backdropFilter);
+    const filter = await queue.evaluate((node) => getComputedStyle(node, '::before').backdropFilter);
     if (alpha === 1) {
       expect(filter).toBe('none');
     } else {

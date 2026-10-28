@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { nativeFixture } from './native-fixture';
 import { renderedTextContrast } from './contrast';
 
-for (const tint of [50, 75, 90, 100]) {
+for (const tint of [50, 69, 70, 75, 90, 100]) {
   test(`glass text contrast stays readable over desktop fixtures at ${tint}% tint`, async ({
     page,
   }, testInfo) => {
@@ -131,12 +131,14 @@ test('glass controls keep contrast across accents and honor increased contrast w
   const saved = await page.evaluate(() => localStorage.getItem('vessel:appearance:v2'));
   await page.emulateMedia({ reducedMotion: 'reduce', contrast: 'more' });
   expect(
-    await page
-      .locator('.app-frame')
-      .evaluate((node) =>
-        getComputedStyle(node).getPropertyValue('--reading-surface-opacity').trim(),
-      ),
-  ).toBe('1');
+    await page.locator('.app-frame').evaluate((node) => {
+      const style = getComputedStyle(node);
+      return (
+        style.getPropertyValue('--theme-secondary').trim() ===
+        style.getPropertyValue('--theme-foreground').trim()
+      );
+    }),
+  ).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem('vessel:appearance:v2'))).toBe(saved);
   const increased = await renderedTextContrast(page, [
     { selector: '.song-title, .song-artist, .filter-pills button' },
