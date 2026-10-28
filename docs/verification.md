@@ -1,5 +1,14 @@
 # Verification log
 
+## Crisp low-tint typography and Regular glass beta.11 (2026-10-29)
+
+- Reproduced the owner's complaint with a red typography check: a dark 50% heading had four black one-pixel shadow offsets plus a blurred shadow. Removed the halo, forced-white fill, and extra dark low-tint weight. The regression now requires zero stroke/shadow, identical dark weights/fills at 85% and 50%, and fixed material/icon/border tokens. Before/after browser screenshots were reviewed.
+- Followed [Apple's material guidance](https://developer.apple.com/design/human-interface-guidelines/materials): text-heavy macOS UI now selects **Regular Liquid Glass** at startup and when native effects are restored. The actual AppKit/WKWebView diagnostic passes Regular **style 0**, non-opaque native window/WebView, clear window alpha, production UI/player, three live Home shelves, and clean dark typography with normal weights and semantic fill.
+- Plain text also exposed sharp lower letters through WebKit popovers. Reused the bounded live cutouts to occlude lower content regions/groups under floating surfaces, preserving nested quality popovers, shared tint alpha, dismissal, and player-edge coverage. There is no added text contour or opaque reading patch.
+- **59 WebKit checks** and **28 focused Chromium checks** pass, including both modes, six tints, popover/quality/account contrast, opacity, reveals, player edges, playlist/lyrics flows, and saved choices. Material-backed dark 50% Home/search samples measure **5.03:1 minimum** in both engines. The controlled 35% fixture underlay is explicit: it is not an exact native Regular-glass model, a production dimming layer, or an OS pixel measurement. Removing it is red-capable; raw clear 50% glass on white is not claimed to meet contrast without material support.
+- Zero Svelte diagnostics, production frontend builds, Rust formatting, default/diagnostic Clippy with warnings denied, **57 macOS library tests**, two binary tests, and non-network integration pass. A transient local native-resource read timeout was resolved by the pinned runtime preparation before successful checks.
+- Normal macOS packaging verifies **107 signatures**, ZIP extraction, DMG integrity/mount/Applications shortcut, and checksums. The final extracted app survives eight seconds with system-only PATH and quits normally (exit 0). ZIP size: **75,514,272 bytes**. Signing remains ad-hoc/not notarized.
+
 ## Account playlist writes and lyrics beta.10 (2026-10-28)
 
 - **57 ordinary macOS library tests**, **two binary tests**, and non-network integration pass; formatting and default/diagnostic Clippy pass with warnings denied. New real-transport fixtures cover authenticated create/add payloads, editor-backed ownership, private defaults, creation with a song, failed/missing/gated acknowledgements, no automatic retries, guest/input rejection, stale creation after sign-out, and lyrics text/credit/cache boundaries.

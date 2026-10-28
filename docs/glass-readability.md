@@ -4,9 +4,17 @@
 
 - Light/Dark is an explicit saved preference, available in Appearance and through the top-bar sun/moon button.
 - Glass tint changes the shared material alpha from 50–100%. It never changes the selected mode, surface RGB, or icon colors. Opaque mode makes that same material solid.
-- Below 70% tint, only text receives extra contrast. Text strokes are removed so small letters retain their filled centers and normal antialiasing. Dark mode uses semibold white text with a dark halo painted behind it; light mode keeps dark letters with modest extra weight. Filled buttons retain normal dark text and SVG icons have no text shadow.
+- Dark-mode letters keep their normal system-font weights, semantic colors, and antialiasing through the entire tint range. There is no stroke, halo, forced-white fill, or extra low-tint bolding. Primary/secondary labels retain their hierarchy and filled buttons retain dark text. Light mode keeps its existing modest low-tint weight treatment.
 - Increased contrast uses semantic text roles for the selected mode. An older hard-coded pale artist-caption override was removed because it failed in light mode.
 - Existing v2 preferences gain `colorMode` without resetting other choices. Older beta.7 records infer their previous mode once; changing tint afterward does not infer a new mode.
+
+## Material-supported typography
+
+[Apple's material guidance](https://developer.apple.com/design/human-interface-guidelines/materials) recommends **Regular Liquid Glass** for text-heavy sidebars, alerts, and popovers. This variant blurs and adjusts background luminosity to support foreground legibility. Clear glass is intended for richer media backgrounds and can require separate dimming.
+
+Vessel now selects native `LiquidGlassRegular` at startup and when restoring native effects on macOS 26+, retaining the existing HUD fallback. The UI uses semantic label roles over that material rather than decorating glyph edges. This is native material support for web-rendered system-font text, not a claim that WebView labels gain AppKit's native vibrancy behavior.
+
+Sharp lower content must not compete with floating labels. A WebKit regression exposed readable underlying letters through popovers even when backdrop blur was requested. The live vector cutouts now also occlude underlying content regions and lower overlay content groups. Nested quality popovers remain visible, geometry updates remain event/animation bounded, and shared material alpha stays equal to the tint setting. There are no extra opaque reading patches or desktop-pixel sampling.
 
 ## Transparency flash and player-edge fix
 
@@ -30,8 +38,8 @@ VESSEL_UI_BROWSER=chromium npm run test:ui -- tests/ui/appearance-controls.spec.
 - Explicit modes are checked at 50%, 69%, 70%, 75%, 90%, and 100% over white, dark, and patterned backgrounds. Mode, tint, palette, and migration/persistence have independent assertions.
 - The flash regression delays old mask-image loads, samples opening/settled frames and both player edges, and scrolls Appearance. It fails with the old image masks and passes with inline vector clips.
 - Sidebar coverage retains 80 playlists, actual wheel scrolling, and reachable controls at 1100×700 and 420×800.
-- Text checks require 4.5:1 for ordinary text and 3:1 for large headings. Beta.9 dark 50% samples measure at least **5.23:1 in WebKit** and **5.79:1 in Chromium**, using the actual painted halo behind filled glyph cores. Other Home/search mode and tint fixtures retain their existing thresholds.
+- Text checks require 4.5:1 for ordinary text and 3:1 for large headings. Beta.11 dark 50% Home/search samples measure at least **5.03:1 in WebKit and Chromium** against the controlled material-backed fixtures.
 
-For plain text, `tests/ui/contrast.js` compares declared ink with rendered backgrounds. For halo-backed text it takes two renders: normal text and transparent fill with the actual shadow retained. It checks visible glyph cores with at least 70% fill coverage against their real halo background; missing cores fail rather than silently disappearing from the audit. A regression removes the halo and verifies that unprotected dark-mode text fails on the bright fixture. Text-stroke width must remain zero.
+`tests/ui/contrast.js` compares declared ink with rendered backgrounds for plain text. The typography regression requires zero shadow/stroke, stable weights/fills between 85% and 50%, and fixed surface/icon/border colors. It failed against the previous one-pixel black halo. Removing the fixture's supporting backdrop is also red-capable; plain white text over raw clear 50% glass on white is not asserted to be readable.
 
-These are declared-glyph/background comparisons, not an audit of every anti-aliased display pixel or native desktop compositor. Native window/package results and remaining hardware/account limits are recorded in [verification](verification.md).
+Browser previews cannot render the actual AppKit/DWM backing. `material-backdrop.js` supplies a controlled 35% dark underlay for dark-mode contrast cases, using Apple's clear-glass dimming example as a test condition. It is not an exact model of Regular glass, an added production layer, or a native compositor measurement. The native macOS diagnostic independently verifies Regular style 0 and real WebView typography. Native window/package results and remaining hardware/account limits are recorded in [verification](verification.md).

@@ -1,14 +1,15 @@
-# Vessel 0.1.0-beta.10
+# Vessel 0.1.0-beta.11
 
 Private Apple Silicon macOS and Windows x64 development beta. This is a prerelease, not a stable release.
 
 ## Included changes
 
+- Crisp dark-theme lettering at low tint: removed the dark contour/halo, forced-white fill, and extra bolding. Text retains normal system-font weights and semantic primary/secondary colors.
+- Apple's native Regular Liquid Glass supports the text-heavy macOS interface. Floating surfaces also occlude sharp underlying content so popover labels do not compete with letters behind them. Material alpha still follows the selected tint. See [material-supported typography](glass-readability.md#material-supported-typography).
 - Create playlists in your verified YouTube Music account, with Private as the default visibility. Add songs from track rows or the player to your own playlists, or create a playlist containing the chosen song. Provider-confirmed changes appear in the sidebar; failures do not claim success or retry automatically.
 - A scrollable Lyrics window follows the playing song and displays available YouTube Music text and source credit, with clear unavailable/retry states. See [playlists and lyrics](playlists-and-lyrics.md).
 - Windows now requests a genuinely transparent native window/WebView2 surface and Acrylic backdrop. Reduced-transparency mode clears the native effect while the selected CSS material stays solid.
 - Google handoff accepts trusted YouTube completion hosts and the YouTube consent redirect, rather than waiting only for Music. Scoped authentication-cookie candidates no longer require `LOGIN_INFO`; the server must still verify the account before activation/storage. Pending network verification retries with a deadline instead of leaving an indefinite handoff.
-- Dark-mode text below 70% uses filled, heavier letters with a shadow. The thin text stroke is removed; background, mode, and icon colors stay fixed.
 - Separate Light/Dark buttons and a top-bar sun/moon shortcut. Glass tint changes transparency only; high transparency strengthens glyphs without recoloring surfaces or icons. Existing appearance choices are migrated without resetting other settings.
 - Queue, quality, account, and appearance menus close on an outside click or Escape. Inside clicks stay inside, trigger toggles work normally, and the outside control still receives its click.
 - Fixed the opening flash and transparent player edges by replacing loaded mask images with live inline vector clips. Appearance's background stays in place while settings scroll.
@@ -29,11 +30,11 @@ Private Apple Silicon macOS and Windows x64 development beta. This is a prerelea
 
 ### macOS
 
-Download `Vessel-0.1.0-beta.10-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+Download `Vessel-0.1.0-beta.11-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
 
 ### Windows
 
-Run `Vessel-0.1.0-beta.10-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. Windows controls whether native transparency effects are enabled. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
+Run `Vessel-0.1.0-beta.11-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. Windows controls whether native transparency effects are enabled. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
 
 ### First launch if macOS blocks Vessel
 

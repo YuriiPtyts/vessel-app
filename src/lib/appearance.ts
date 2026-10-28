@@ -1,4 +1,4 @@
-export const DEFAULT_THEME = { id: 'duskfox', name: 'Duskfox', variant: 'Clear glass' };
+export const DEFAULT_THEME = { id: 'duskfox', name: 'Duskfox', variant: 'Adaptive glass' };
 export const GLASS_TINT_MIN = 50;
 export const GLASS_TINT_MAX = 100;
 export const ACCENTS = [

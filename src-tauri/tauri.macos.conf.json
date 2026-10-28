@@ -15,7 +15,7 @@
         "theme": "Dark",
         "trafficLightPosition": { "x": 20, "y": 23 },
         "windowEffects": {
-          "effects": ["liquidGlassClear", "hudWindow"],
+          "effects": ["liquidGlassRegular", "hudWindow"],
           "state": "followsWindowActiveState"
         }
       }

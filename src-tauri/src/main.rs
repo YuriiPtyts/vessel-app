@@ -225,7 +225,7 @@ async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Resul
         } else {
             Some(
                 EffectsBuilder::new()
-                    .effect(Effect::LiquidGlassClear)
+                    .effect(Effect::LiquidGlassRegular)
                     .effect(Effect::HudWindow)
                     .state(EffectState::FollowsWindowActiveState)
                     .build(),

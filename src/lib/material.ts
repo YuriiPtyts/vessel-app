@@ -44,6 +44,7 @@ export function unifiedMaterial(root: HTMLElement) {
     width: number,
     height: number,
     holes: Omit<Bounds, 'scaleX' | 'scaleY'>[],
+    property = '--material-clip',
   ) {
     let value = 'none';
     if (holes.length) {
@@ -79,8 +80,7 @@ export function unifiedMaterial(root: HTMLElement) {
       }
       value = `url("#${clip.id}-${holes.length - 1}")`;
     }
-    if (node.style.getPropertyValue('--material-clip') !== value)
-      node.style.setProperty('--material-clip', value);
+    if (node.style.getPropertyValue(property) !== value) node.style.setProperty(property, value);
   }
 
   function update() {
@@ -89,17 +89,7 @@ export function unifiedMaterial(root: HTMLElement) {
     const overlays = [...root.querySelectorAll<HTMLElement>('[data-material-overlay]')].filter(
       (node) => ['absolute', 'fixed'].includes(getComputedStyle(node).position),
     );
-    const current = new Set(overlays);
     let animating = false;
-    for (const node of observed) {
-      if (!current.has(node)) {
-        resize.unobserve(node);
-        observed.delete(node);
-        node.style.removeProperty('--material-clip');
-        clips.get(node)?.nodes.forEach((clip) => clip.remove());
-        clips.delete(node);
-      }
-    }
     const bounds: Bounds[] = overlays.map((node) => {
       if (!observed.has(node)) {
         resize.observe(node);
@@ -151,6 +141,78 @@ export function unifiedMaterial(root: HTMLElement) {
           })),
       );
     });
+    // A floating surface replaces the content below it, not just its background.
+    // Otherwise sharp underlying letters leak through in WebKit and require an
+    // ugly text halo. Reuse the live cutouts to occlude that lower content.
+    const foreground = new Map<HTMLElement, Bounds[]>();
+    const addForeground = (node: HTMLElement, upper: Bounds[]) => {
+      const rect = node.getBoundingClientRect();
+      const x = rect.left - box.left,
+        y = rect.top - box.top;
+      const holes = upper.filter(
+        (hole) =>
+          hole.x < x + rect.width &&
+          hole.x + hole.width > x &&
+          hole.y < y + rect.height &&
+          hole.y + hole.height > y,
+      );
+      if (!holes.length || !rect.width || !rect.height) return;
+      foreground.set(node, holes);
+      if (!observed.has(node)) {
+        resize.observe(node);
+        observed.add(node);
+      }
+      const scaleX = rect.width / node.offsetWidth || 1;
+      const scaleY = rect.height / node.offsetHeight || 1;
+      setClip(
+        node,
+        node.offsetWidth,
+        node.offsetHeight,
+        holes.map((hole) => ({
+          x: (hole.x - x) / scaleX,
+          y: (hole.y - y) / scaleY,
+          width: hole.width / scaleX,
+          height: hole.height / scaleY,
+          radius: hole.radius / scaleX,
+        })),
+        '--material-content-clip',
+      );
+      node.setAttribute('data-material-content', '');
+    };
+    for (const node of root.querySelectorAll<HTMLElement>(
+      ':scope > .sidebar, :scope > .main-stage, :scope > .now-playing-panel',
+    )) {
+      if (!overlays.includes(node)) addForeground(node, bounds);
+    }
+    const addChildren = (parent: HTMLElement, upper: Bounds[]) => {
+      for (const child of parent.children) {
+        if (!(child instanceof HTMLElement) || child.hasAttribute('data-material-overlay'))
+          continue;
+        // Keep nested popovers outside the player's bounds visible.
+        if (child.querySelector('[data-material-overlay]')) addChildren(child, upper);
+        else addForeground(child, upper);
+      }
+    };
+    overlays.forEach((node, index) => addChildren(node, bounds.slice(index + 1)));
+    const current = new Set([...overlays, ...foreground.keys()]);
+    for (const node of current) {
+      if (!foreground.has(node)) {
+        node.style.removeProperty('--material-content-clip');
+        node.removeAttribute('data-material-content');
+      }
+      if (!overlays.includes(node)) node.style.removeProperty('--material-clip');
+    }
+    for (const node of observed) {
+      if (!current.has(node)) {
+        resize.unobserve(node);
+        observed.delete(node);
+        node.style.removeProperty('--material-clip');
+        node.style.removeProperty('--material-content-clip');
+        node.removeAttribute('data-material-content');
+        clips.get(node)?.nodes.forEach((clip) => clip.remove());
+        clips.delete(node);
+      }
+    }
     if (animating) schedule();
   }
 
@@ -169,7 +231,11 @@ export function unifiedMaterial(root: HTMLElement) {
       resize.disconnect();
       mutation.disconnect();
       root.style.removeProperty('--material-clip');
-      for (const node of observed) node.style.removeProperty('--material-clip');
+      for (const node of observed) {
+        node.style.removeProperty('--material-clip');
+        node.style.removeProperty('--material-content-clip');
+        node.removeAttribute('data-material-content');
+      }
       svg.remove();
     },
   };

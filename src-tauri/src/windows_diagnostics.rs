@@ -121,7 +121,7 @@ pub const PROBE_SCRIPT: &str = r#"(() => {
       const caption = document.querySelector('.sidebar nav > button > span');
       if (caption) {
         const ink = getComputedStyle(caption);
-        cleanDarkText = parseFloat(ink.webkitTextStrokeWidth) === 0 && parseInt(ink.fontWeight) >= 500 && ink.textShadow !== 'none';
+        cleanDarkText = parseFloat(ink.webkitTextStrokeWidth) === 0 && parseInt(ink.fontWeight) <= 500 && ink.textShadow === 'none' && ink.webkitTextFillColor === ink.color;
       }
       root.classList.toggle('light-glass', light); root.classList.toggle('contrast-ink', strong);
     }

@@ -37,9 +37,9 @@ Anonymous `FEmusic_home` returned real provider shelves, including Quick picks, 
 
 ## Native desktop material contract
 
-Tauri 2.12.5 / window-vibrancy 0.8.1 was inspected for compatibility. It supports `LiquidGlassClear` on macOS 26+, with a classic material fallback. Vessel uses clear glass and HUD fallback, a clear window background, non-opaque WebView, and transparent main stage. Following the owner's readability correction, Duskfox tint now defaults to **50%**, with a **50–100%** control. Existing values below 50 are clamped and saved; other appearance choices and local collection data are preserved. At 100%, or with reduced transparency enabled, the frontend is opaque and native material effects are removed.
+Tauri 2.12.5 / window-vibrancy 0.8.1 supports native Liquid Glass on macOS 26+, with a classic material fallback. **Beta.11 uses `LiquidGlassRegular`** for its text-heavy interface, replacing the earlier Clear variant; native material luminosity supports clean foreground labels. The clear window background, non-opaque WebView, transparent main stage, and HUD fallback remain. Duskfox tint defaults to **50%**, with a **50–100%** control. Existing values below 50 are clamped and saved; other appearance choices and local collection data are preserved. At 100%, or with reduced transparency enabled, the frontend is opaque and native material effects are removed.
 
-An opt-in **real AppKit/WKWebView** report, rerun on 2026-10-27, observed:
+An earlier opt-in **real AppKit/WKWebView** report, rerun on 2026-10-27 before the beta.11 material change, observed:
 
 - `NSWindow.isOpaque = false`
 - Native window background alpha **0**
@@ -49,6 +49,8 @@ An opt-in **real AppKit/WKWebView** report, rerun on 2026-10-27, observed:
 - Web tint **0.5**, main-stage background `rgba(0, 0, 0, 0)`
 
 ScreenCaptureKit could not provide a reliable foreground desktop pixel comparison in this harness; those attempted captures are not counted as visual transparency proof. Native material/renderer properties above are actual observations. WebKit screenshots use controlled IPC fixtures. Fullscreen/dragging/accessibility and full compositor/power QA remain release work.
+
+The current checker requires native **Regular style 0**, plus no shadow/stroke, normal dark low-tint label weights, and semantic text fill in the actual WebView. It retains the clear NSWindow/WebView and mounted production UI checks. Browser contrast fixtures have an explicitly controlled backing; see [glass readability](glass-readability.md) for the distinction from native compositing.
 
 ### Reproduce the material contract (macOS 26+)
 

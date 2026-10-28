@@ -1,6 +1,6 @@
 # Appearance and future themes
 
-## Current default: Duskfox palette, clear-glass material
+## Current default: Duskfox palette, adaptive glass material
 
 The owner requested the colors of their active Zed theme. The configured dark theme was **Duskfox - blurred**, supplied by **Nightfox for Zed 0.10.5**. Vessel snapshots the relevant palette; it does not read or change Zed settings at runtime and does not require Zed to be installed.
 
@@ -27,14 +27,14 @@ Palette tokens live in `src/lib/themes/duskfox.css`. Shared material/layout styl
 - Four Duskfox accent choices.
 - Independent Light/Dark buttons in Appearance and a sun/moon shortcut in the top bar.
 - Live glass-tint adjustment from 50–100%, default 50%. It changes transparency only, not the selected light/dark material.
-- Text-only contrast at high transparency: stronger filled letters and a dark-mode shadow, with no text stroke that can thin the centers. Surface and icon colors stay fixed.
+- Crisp dark-mode system-font text with stable weights, semantic label colors, and no contour, halo, or forced-white fill. Native Regular glass supports legibility; sharp content beneath floating surfaces is occluded. Surface/icon tokens and tint alpha stay fixed.
 - Reduced-transparency mode that removes native vibrancy and CSS backdrop filters.
 - Comfortable/compact song rows.
 - Expanded/compact navigation.
 - A now-playing artwork panel, enabled by default on wide windows. The player cover opens an overlay on smaller windows.
 - Reset to the defaults.
 
-Preferences stay validated in `vessel:appearance:v2`, now with an explicit `colorMode`. An older beta.7 record without this field keeps its previous visible light/dark appearance once, then stores the independent choice. The old default 56% tint migrates to 50%; low values are clamped to the supported range. Accent, spacing, navigation, artwork, and transparency preferences are preserved. Legacy `vessel:opaque` remains supported. Native clear Liquid Glass is used on macOS 26+, with HUD vibrancy on older systems and bounded player/popover blur.
+Preferences stay validated in `vessel:appearance:v2`, now with an explicit `colorMode`. An older beta.7 record without this field keeps its previous visible light/dark appearance once, then stores the independent choice. The old default 56% tint migrates to 50%; low values are clamped to the supported range. Accent, spacing, navigation, artwork, and transparency preferences are preserved. Legacy `vessel:opaque` remains supported. Native Regular Liquid Glass is used on macOS 26+, with HUD vibrancy on older systems and bounded player/popover blur. See [the material-supported typography approach](glass-readability.md#material-supported-typography).
 
 Visual material reference: https://github.com/Jonzu00/GlassPlayer. That project uses Windows Acrylic and translucent rounded panes. Vessel independently applies the layering/highlight ideas with AppKit and its Duskfox palette; no WPF source is incorporated. Desktop transparency comes from the native window/effect stack, while web tint and surface fills stay low enough to reveal it.
 

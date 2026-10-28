@@ -15,16 +15,21 @@ assert(
   ),
 );
 assert(
-  report.views.some((view) => view.glassStyle === 1 && view.opaque === false),
-  'Expected a real clear-style NSGlassEffectView (macOS 26+).',
+  report.views.some((view) => view.glassStyle === 0 && view.opaque === false),
+  'Expected a real Regular-style NSGlassEffectView (macOS 26+), which supports text legibility.',
 );
 assert.equal(report.web.rootPresent, true, 'The production frontend must have mounted.');
 assert.equal(report.web.playerPresent, true);
+assert.equal(
+  report.web.cleanDarkText,
+  true,
+  'Low-tint dark labels must retain normal weights, semantic fill, and no stroke or text shadow.',
+);
 assert(
   Number(report.web.tint) >= 0.5 && Number(report.web.tint) < 1,
   'The glass mode must use the readable 50–99% tint range.',
 );
 assert.equal(report.web.stageBackground, 'rgba(0, 0, 0, 0)');
 console.log(
-  `Native material contract passed: clear NSWindow, non-opaque WebView, clear Liquid Glass, ${Number(report.web.tint) * 100}% tint; ${report.web.homeShelves} live Home shelves.`,
+  `Native material contract passed: clear NSWindow, non-opaque WebView, Regular Liquid Glass, ${Number(report.web.tint) * 100}% tint; ${report.web.homeShelves} live Home shelves.`,
 );

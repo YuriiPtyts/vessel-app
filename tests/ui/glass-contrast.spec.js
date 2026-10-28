@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { nativeFixture } from './native-fixture';
 import { renderedTextContrast } from './contrast';
+import { materialBackdrop } from './material-backdrop';
 
 for (const colorMode of ['light', 'dark']) {
   for (const tint of [50, 69, 70, 75, 90, 100]) {
-    test(`${colorMode} glass text contrast stays readable over desktop fixtures at ${tint}% tint`, async ({
+    test(`${colorMode} glass text contrast stays readable over material-backed fixtures at ${tint}% tint`, async ({
       page,
     }, testInfo) => {
       await nativeFixture(page);
@@ -28,6 +29,7 @@ for (const colorMode of ['light', 'dark']) {
         { tint, colorMode },
       );
       await page.goto('/');
+      await materialBackdrop(page);
       await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
       await page.addStyleTag({
@@ -109,6 +111,7 @@ for (const colorMode of ['light', 'dark']) {
       colorMode,
     );
     await page.goto('/');
+    await materialBackdrop(page);
     await page.getByRole('button', { name: 'Play Instant Crush', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause playback', exact: true })).toBeEnabled();
     await page.addStyleTag({

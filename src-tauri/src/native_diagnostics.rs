@@ -86,6 +86,21 @@ pub const PROBE_SCRIPT: &str = r#"(() => {
   setTimeout(() => {
     const root = document.querySelector('.app-frame');
     const stage = document.querySelector('.main-stage');
+    let cleanDarkText = false;
+    if (root) {
+      const light = root.classList.contains('light-glass');
+      const strong = root.classList.contains('contrast-ink');
+      root.classList.remove('light-glass', 'contrast-ink');
+      const label = document.querySelector('.sidebar nav > button > span');
+      const normalWeight = label ? getComputedStyle(label).fontWeight : null;
+      root.classList.add('contrast-ink');
+      if (label) {
+        const ink = getComputedStyle(label);
+        cleanDarkText = ink.fontWeight === normalWeight && ink.textShadow === 'none' && parseFloat(ink.webkitTextStrokeWidth) === 0 && ink.webkitTextFillColor === ink.color;
+      }
+      root.classList.toggle('light-glass', light);
+      root.classList.toggle('contrast-ink', strong);
+    }
     window.__TAURI_INTERNALS__.invoke('native_material_probe', { probe: {
       rootPresent: Boolean(root), playerPresent: Boolean(document.querySelector('.floating-player')),
       bodyLength: document.body?.textContent?.length ?? 0,
@@ -93,7 +108,7 @@ pub const PROBE_SCRIPT: &str = r#"(() => {
       tint: root ? getComputedStyle(root).getPropertyValue('--glass-opacity') : null,
       stageBackground: stage ? getComputedStyle(stage).backgroundColor : null,
       homeShelves: document.querySelectorAll('.provider-shelf').length,
-      alertPresent: Boolean(document.querySelector('[role=alert]'))
+      alertPresent: Boolean(document.querySelector('[role=alert]')), cleanDarkText
     }}).catch(() => {});
   }, 3500);
 })()"#;

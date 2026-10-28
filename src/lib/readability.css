@@ -1,7 +1,7 @@
 /* One material plane for the whole window. Structural surfaces stay clear so
    the chosen tint is never compounded by darker sidebar/card/reading layers.
    Light/dark is an explicit preference. Tint changes alpha; high-transparency
-   readability treatment changes glyphs only, never the chosen material. */
+   native Regular glass supports legibility without decorating glyph edges. */
 .app-frame {
   --material-rgb: var(--theme-bg-rgb);
   --material-alpha: var(--glass-opacity);
@@ -34,25 +34,10 @@
 }
 .app-frame.contrast-ink {
   -webkit-text-stroke: 0;
-  font-weight: 500;
-}
-.app-frame.contrast-ink:not(.light-glass) {
-  --legible-text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 1px 2px #000;
-  -webkit-text-fill-color: #fff;
-  font-weight: 600;
-  text-shadow: var(--legible-text-shadow);
-}
-.app-frame.contrast-ink:not(.light-glass) :is(button, input, select, textarea),
-.app-frame.contrast-ink:not(.light-glass) input::placeholder {
-  text-shadow: var(--legible-text-shadow);
-}
-.app-frame.contrast-ink
-  :is(.primary-button, .main-transport, .accent-swatches button > span, .toggle.on) {
-  -webkit-text-fill-color: currentColor;
   text-shadow: none;
 }
 .app-frame.light-glass.contrast-ink {
-  -webkit-text-stroke: 0;
+  font-weight: 500;
 }
 .app-frame svg {
   -webkit-text-stroke: 0;
@@ -135,6 +120,9 @@
 }
 .app-frame [data-material-overlay] > * {
   opacity: var(--reveal-content-opacity, 1);
+}
+.app-frame [data-material-content] {
+  clip-path: var(--material-content-clip, none);
 }
 .app-frame
   :is(

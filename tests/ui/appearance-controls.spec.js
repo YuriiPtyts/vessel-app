@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { nativeFixture } from './native-fixture';
 import { renderedTextContrast } from './contrast';
+import { materialBackdrop } from './material-backdrop';
 
 async function materialColor(page) {
   return page.locator('.app-frame').evaluate((node) =>
@@ -104,7 +105,7 @@ for (const tint of [50, 80]) {
   });
 }
 
-test('high transparency strengthens glyphs without recoloring the material or controls', async ({
+test('dark low-tint typography stays crisp without outlines, halos, or heavier weights', async ({
   page,
 }) => {
   await nativeFixture(page);
@@ -126,23 +127,46 @@ test('high transparency strengthens glyphs without recoloring the material or co
       text: getComputedStyle(document.querySelector('.provider-home-heading h1')).color,
     }));
   const original = await fixedColors();
+  const typography = () =>
+    page
+      .locator(
+        '.provider-home-heading h1, .provider-home-heading p:last-child, .sidebar nav > button > span, .search-field input',
+      )
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const ink = getComputedStyle(node);
+          return {
+            weight: ink.fontWeight,
+            fill: ink.webkitTextFillColor,
+            color: ink.color,
+            shadow: ink.textShadow,
+            stroke: ink.webkitTextStrokeWidth,
+          };
+        }),
+      );
+  const originalTypography = await typography();
   await setTint(page, 50);
   expect(await fixedColors()).toEqual(original);
+  await page.screenshot({ path: test.info().outputPath('low-tint-dark.png') });
   const heading = page.locator('.provider-home-heading h1');
   expect(
     await heading.evaluate((node) => parseFloat(getComputedStyle(node).webkitTextStrokeWidth)),
     'small text must retain a filled center, not a thin outline',
   ).toBe(0);
-  expect(await heading.evaluate((node) => getComputedStyle(node).textShadow)).not.toBe('none');
+  expect(
+    await heading.evaluate((node) => getComputedStyle(node).textShadow),
+    'No contour or halo around the letters',
+  ).toBe('none');
+  expect(await typography()).toEqual(originalTypography);
   await page.getByRole('button', { name: 'Close appearance settings', exact: true }).click();
+  await materialBackdrop(page);
+  await page.screenshot({ path: test.info().outputPath('low-tint-regular-backed.png') });
   const selectors = [
     { selector: '.provider-home-heading p:last-child, .sidebar nav > button > span' },
   ];
-  const strengthened = await renderedTextContrast(page, selectors);
-  expect(strengthened.every((sample) => sample.ratio >= sample.minimum)).toBe(true);
-  await page.addStyleTag({
-    content: '.app-frame, .app-frame * { text-shadow: none !important; }',
-  });
+  const supported = await renderedTextContrast(page, selectors);
+  expect(supported.every((sample) => sample.ratio >= sample.minimum)).toBe(true);
+  await page.locator('#native-material-fixture').evaluate((node) => node.remove());
   const unprotected = await renderedTextContrast(page, selectors);
   expect(unprotected.some((sample) => sample.ratio < sample.minimum)).toBe(true);
 });

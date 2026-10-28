@@ -95,8 +95,8 @@
         onchange={() => onchange({})}
       />
       <p>
-        Changes transparency only. Your light/dark choice stays the same. Text gets extra contrast
-        at high transparency. At 100%, the background is solid.
+        Changes transparency only. Your light/dark choice stays the same. Text stays crisp without
+        outlines. At 100%, the background is solid.
       </p>
     </div>
     <button
