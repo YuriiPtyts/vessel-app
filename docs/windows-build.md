@@ -13,7 +13,7 @@ npm run package:windows
 
 `native-dependencies.windows.json` pins the exact Windows LGPL libmpv, yt-dlp, and Deno downloads and their SHA-256 hashes. Preparation verifies Windows x64 PE headers, the GPL-disabled libmpv configuration, and absence of explicit GPL/nonfree FFmpeg enable flags. The selected upstream LGPL build's provenance is recorded; this is not a complete independent transitive-license audit.
 
-The output is `.cache/releases/v0.1.0-beta.5/Vessel-0.1.0-beta.5-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
+The output is `.cache/releases/v0.1.0-beta.6/Vessel-0.1.0-beta.6-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
 
 ## Platform behavior
 
