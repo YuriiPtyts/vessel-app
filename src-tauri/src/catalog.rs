@@ -70,6 +70,7 @@ struct CachedCollection {
 
 pub struct MusicCatalog {
     client: Client,
+    origin: String,
     session: Mutex<Option<Session>>,
     cache: Mutex<Option<CachedSearch>>,
     known_tracks: Mutex<VecDeque<Track>>,
@@ -98,6 +99,7 @@ impl MusicCatalog {
         let (cancellation, _) = watch::channel(0);
         Ok(Self {
             client,
+            origin: ORIGIN.into(),
             session: Mutex::new(None),
             cache: Mutex::new(None),
             known_tracks: Mutex::new(VecDeque::new()),
@@ -214,14 +216,19 @@ impl MusicCatalog {
     }
 
     pub async fn collection(&self, id: &str, more: bool) -> Result<CollectionPage> {
-        let target = self
+        let (target, revision) = self
             .home
             .lock()
             .map_err(|_| AppError::internal())?
             .as_ref()
             .filter(|cache| cache.revision == self.account.snapshot().revision)
-            .and_then(|cache| cache.targets.get(id))
-            .cloned()
+            .and_then(|cache| {
+                cache
+                    .targets
+                    .get(id)
+                    .cloned()
+                    .map(|target| (target, cache.revision))
+            })
             .ok_or_else(|| {
                 AppError::new(
                     "stale_collection",
@@ -229,16 +236,26 @@ impl MusicCatalog {
                     true,
                 )
             })?;
+        self.collection_target(target, more, revision).await
+    }
+
+    pub(crate) async fn collection_target(
+        &self,
+        target: CollectionTarget,
+        more: bool,
+        revision: u64,
+    ) -> Result<CollectionPage> {
         let mut cancel = self.cancellation.subscribe();
         self.cancel();
         cancel.borrow_and_update();
-        tokio::select! { result = self.collection_inner(target, more) => result, _ = cancel.changed() => Err(AppError::cancelled()) }
+        tokio::select! { result = self.collection_inner(target, more, revision) => result, _ = cancel.changed() => Err(AppError::cancelled()) }
     }
 
     async fn collection_inner(
         &self,
         target: CollectionTarget,
         more: bool,
+        expected_revision: u64,
     ) -> Result<CollectionPage> {
         let _slot = self
             .slot
@@ -268,6 +285,9 @@ impl MusicCatalog {
             (Vec::new(), None)
         };
         let (context, revision) = self.context().await?;
+        if revision != expected_revision {
+            return Err(AppError::cancelled());
+        }
         let mut body = json!({"context":context, "browseId":target.item.id});
         if let Some(params) = &target.params {
             body["params"] = json!(params);
@@ -304,9 +324,11 @@ impl MusicCatalog {
         continuation: Option<&str>,
         revision: u64,
     ) -> Result<Value> {
-        let mut endpoint =
-            url::Url::parse(&format!("{ORIGIN}/youtubei/v1/browse?prettyPrint=false"))
-                .map_err(|_| catalog_error())?;
+        let mut endpoint = url::Url::parse(&format!(
+            "{}/youtubei/v1/browse?prettyPrint=false",
+            self.origin
+        ))
+        .map_err(|_| catalog_error())?;
         if let Some(token) = continuation {
             endpoint
                 .query_pairs_mut()
@@ -320,8 +342,8 @@ impl MusicCatalog {
         let request = self
             .client
             .post(endpoint)
-            .header("Origin", ORIGIN)
-            .header("Referer", format!("{ORIGIN}/"))
+            .header("Origin", &self.origin)
+            .header("Referer", format!("{}/", self.origin))
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
             .json(&body);
@@ -389,9 +411,11 @@ impl MusicCatalog {
             .and_then(Value::as_str)
             .ok_or_else(catalog_error)?;
         let body = json!({ "context": context, "query": query, "params": kind.params() });
-        let mut endpoint =
-            url::Url::parse(&format!("{ORIGIN}/youtubei/v1/search?prettyPrint=false"))
-                .map_err(|_| catalog_error())?;
+        let mut endpoint = url::Url::parse(&format!(
+            "{}/youtubei/v1/search?prettyPrint=false",
+            self.origin
+        ))
+        .map_err(|_| catalog_error())?;
         if let Some(continuation) = &continuation {
             endpoint
                 .query_pairs_mut()
@@ -401,8 +425,8 @@ impl MusicCatalog {
         let request = self
             .client
             .post(endpoint)
-            .header("Origin", ORIGIN)
-            .header("Referer", format!("{ORIGIN}/"))
+            .header("Origin", &self.origin)
+            .header("Referer", format!("{}/", self.origin))
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
             .json(&body);
@@ -450,7 +474,7 @@ impl MusicCatalog {
         {
             return Ok((session.context.clone(), revision));
         }
-        let request = self.client.get(format!("{ORIGIN}/"));
+        let request = self.client.get(format!("{}/", self.origin));
         let request = if let Some(session) = session {
             session.request_headers(request)?
         } else {
@@ -519,7 +543,7 @@ impl MusicCatalog {
 
     pub(crate) async fn verify_account(&self, session: &CookieSession) -> Result<AccountProfile> {
         let response = session
-            .request_headers(self.client.get(format!("{ORIGIN}/")))?
+            .request_headers(self.client.get(format!("{}/", self.origin)))?
             .send()
             .await
             .map_err(|_| catalog_error())?;
@@ -532,10 +556,11 @@ impl MusicCatalog {
         let request = self
             .client
             .post(format!(
-                "{ORIGIN}/youtubei/v1/account/account_menu?prettyPrint=false"
+                "{}/youtubei/v1/account/account_menu?prettyPrint=false",
+                self.origin
             ))
-            .header("Origin", ORIGIN)
-            .header("Referer", format!("{ORIGIN}/"))
+            .header("Origin", &self.origin)
+            .header("Referer", format!("{}/", self.origin))
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
             .json(&json!({"context":context}));
@@ -568,8 +593,11 @@ impl MusicCatalog {
         let (context, revision) = self.context().await?;
         let cursor = cursor.filter(|cursor| cursor.account_revision == revision);
         let mut body = json!({"context":context,"videoId":seed_id,"playlistId":cursor.map(|cursor|cursor.playlist_id.clone()).unwrap_or_else(||format!("RDAMVM{seed_id}")),"params":"wAEB","enablePersistentPlaylistPanel":true,"isAudioOnly":true,"tunerSettingValue":"AUTOMIX_SETTING_NORMAL"});
-        let mut endpoint = url::Url::parse(&format!("{ORIGIN}/youtubei/v1/next?prettyPrint=false"))
-            .map_err(|_| catalog_error())?;
+        let mut endpoint = url::Url::parse(&format!(
+            "{}/youtubei/v1/next?prettyPrint=false",
+            self.origin
+        ))
+        .map_err(|_| catalog_error())?;
         if let Some(cursor) = cursor {
             body["videoId"] = json!(cursor.seed_id);
             body["continuation"] = json!(cursor.token);
@@ -585,8 +613,8 @@ impl MusicCatalog {
         let request = self
             .client
             .post(endpoint)
-            .header("Origin", ORIGIN)
-            .header("Referer", format!("{ORIGIN}/"))
+            .header("Origin", &self.origin)
+            .header("Referer", format!("{}/", self.origin))
             .header("X-YouTube-Client-Name", "67")
             .header("X-YouTube-Client-Version", version)
             .json(&body);
@@ -599,6 +627,137 @@ impl MusicCatalog {
         let batch = crate::radio::parse_radio(&data, seed_id, revision)?;
         self.remember(&batch.tracks)?;
         Ok(batch)
+    }
+
+    pub(crate) async fn account_browse(
+        &self,
+        id: &str,
+        cursor: Option<&crate::account_library::BrowseCursor>,
+        revision: u64,
+    ) -> Result<Value> {
+        self.account_collection_browse(id, None, cursor, revision)
+            .await
+    }
+
+    pub(crate) async fn account_collection_browse(
+        &self,
+        id: &str,
+        params: Option<&str>,
+        cursor: Option<&crate::account_library::BrowseCursor>,
+        revision: u64,
+    ) -> Result<Value> {
+        let mut body = json!({"browseId": id});
+        if let Some(params) = params {
+            body["params"] = json!(params);
+        }
+        let legacy = if let Some(cursor) = cursor {
+            if cursor.modern {
+                body = json!({"continuation": cursor.token});
+                None
+            } else {
+                Some(cursor.token.as_str())
+            }
+        } else {
+            None
+        };
+        self.account_post("browse", body, legacy, revision).await
+    }
+
+    pub(crate) async fn rate_account_song(
+        &self,
+        id: &str,
+        liked: bool,
+        revision: u64,
+    ) -> Result<()> {
+        if !valid_video_id(id) {
+            return Err(crate::account_library::library_error());
+        }
+        let endpoint = if liked {
+            "like/like"
+        } else {
+            "like/removelike"
+        };
+        let data = self
+            .account_post(endpoint, json!({"target":{"videoId":id}}), None, revision)
+            .await?;
+        crate::account_library::validate_rating_response(&data)
+    }
+
+    async fn account_post(
+        &self,
+        endpoint: &str,
+        mut body: Value,
+        continuation: Option<&str>,
+        expected_revision: u64,
+    ) -> Result<Value> {
+        self.require_account(expected_revision)?;
+        let (context, revision) = self.context().await?;
+        if revision != expected_revision {
+            return Err(AppError::cancelled());
+        }
+        body["context"] = context;
+        let version = body
+            .pointer("/context/client/clientVersion")
+            .and_then(Value::as_str)
+            .ok_or_else(catalog_error)?;
+        let mut endpoint = url::Url::parse(&format!(
+            "{}/youtubei/v1/{endpoint}?prettyPrint=false",
+            self.origin
+        ))
+        .map_err(|_| catalog_error())?;
+        if let Some(token) = continuation {
+            endpoint
+                .query_pairs_mut()
+                .append_pair("ctoken", token)
+                .append_pair("continuation", token);
+        }
+        let request = self
+            .client
+            .post(endpoint)
+            .header("Origin", &self.origin)
+            .header("Referer", format!("{}/", self.origin))
+            .header("X-YouTube-Client-Name", "67")
+            .header("X-YouTube-Client-Version", version)
+            .json(&body);
+        let session = self.require_account(expected_revision)?;
+        let response = session
+            .request_headers(request)?
+            .send()
+            .await
+            .map_err(|_| crate::account_library::library_error())?;
+        let data = self.response(response, expected_revision).await?;
+        self.require_account(expected_revision)?;
+        Ok(data)
+    }
+
+    fn require_account(&self, revision: u64) -> Result<Arc<CookieSession>> {
+        let state = self.account.snapshot();
+        let (current, session) = self.account.request_session();
+        if state.revision != revision || current != revision {
+            return Err(AppError::cancelled());
+        }
+        if state.mode != crate::account::AccountMode::Connected {
+            return Err(crate::account_library::account_required());
+        }
+        session.ok_or_else(crate::account_library::account_required)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_account_test_server(account: Arc<Account>, origin: String) -> Self {
+        assert!(origin.starts_with("http://127.0.0.1:"));
+        let revision = account.snapshot().revision;
+        let mut catalog = Self::with_account(account).unwrap();
+        catalog.client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        catalog.origin = origin;
+        *catalog.session.lock().unwrap() = Some(Session {
+            context: json!({"client":{"clientVersion":"fixture","clientName":"WEB_REMIX"}}),
+            created: Instant::now(),
+            revision,
+        });
+        catalog
     }
 }
 
@@ -761,7 +920,7 @@ pub(crate) fn parse_track(item: &Value, kind: Option<SearchKind>) -> Option<Trac
     })
 }
 
-pub(crate) fn walk(value: &Value, visit: &mut impl FnMut(&Value)) {
+pub(crate) fn walk<'a>(value: &'a Value, visit: &mut impl FnMut(&'a Value)) {
     visit(value);
     match value {
         Value::Object(map) => map.values().for_each(|value| walk(value, visit)),

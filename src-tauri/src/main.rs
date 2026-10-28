@@ -15,6 +15,7 @@ use std::sync::Arc;
 use tauri::Manager;
 use vessel_app::{
     account::AccountSnapshot,
+    account_library::AccountLibrarySnapshot,
     application::{AppEvent, Application, PlaybackSelection},
     catalog::{SearchKind, SearchResults},
     error::Result,
@@ -136,6 +137,42 @@ async fn local_library(state: AppState<'_>) -> Result<LibrarySnapshot> {
 #[tauri::command]
 async fn toggle_like(state: AppState<'_>, video_id: String) -> Result<LibrarySnapshot> {
     state.toggle_like(&video_id)
+}
+
+#[tauri::command]
+async fn account_library(state: AppState<'_>) -> Result<AccountLibrarySnapshot> {
+    state.account_library()
+}
+
+#[tauri::command]
+async fn refresh_account_library(
+    state: AppState<'_>,
+    force: bool,
+    account_revision: u64,
+) -> Result<AccountLibrarySnapshot> {
+    state.refresh_account_library(force, account_revision).await
+}
+
+#[tauri::command]
+async fn set_account_like(
+    state: AppState<'_>,
+    video_id: String,
+    liked: bool,
+    account_revision: u64,
+) -> Result<AccountLibrarySnapshot> {
+    state
+        .set_account_like(&video_id, liked, account_revision)
+        .await
+}
+
+#[tauri::command]
+async fn account_playlist(
+    state: AppState<'_>,
+    id: String,
+    more: bool,
+    account_revision: u64,
+) -> Result<vessel_app::home::CollectionPage> {
+    state.account_playlist(&id, more, account_revision).await
 }
 
 #[tauri::command]
@@ -338,6 +375,9 @@ fn main() {
                     handle.emit_to("main", "selection-state", inspection)
                 }
                 AppEvent::Account(snapshot) => handle.emit_to("main", "account-state", snapshot),
+                AppEvent::AccountLibrary(snapshot) => {
+                    handle.emit_to("main", "account-library-state", snapshot)
+                }
             };
         };
         app.manage(if isolated_services {
@@ -444,6 +484,10 @@ fn main() {
                 play_song,
                 local_library,
                 toggle_like,
+                account_library,
+                refresh_account_library,
+                set_account_like,
+                account_playlist,
                 set_material_mode,
                 inspect_track,
                 cancel_inspection,

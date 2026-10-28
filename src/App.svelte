@@ -10,6 +10,9 @@
     Library,
     LoaderCircle,
     Music2,
+    ListMusic,
+    RefreshCw,
+    HardDrive,
     Search,
     Settings2,
     X,
@@ -39,6 +42,12 @@
     guestAccount,
     errorMessage,
     getLibrary,
+    getAccountLibrary,
+    refreshAccountLibrary,
+    emptyAccountLibrary,
+    setAccountLike,
+    browseAccountPlaylist,
+    onAccountLibrary,
     getPlayback,
     getRuntimeReport,
     getHomeFeed,
@@ -72,6 +81,7 @@
     stopPlayback,
     toggleLike,
     type LocalLibrary,
+    type AccountLibrarySnapshot,
     type PlaybackSnapshot,
     type RuntimeReport,
     type SearchKind,
@@ -86,18 +96,25 @@
     type PlaybackSelection,
   } from './lib/native';
 
-  type View = 'home' | 'search' | 'liked' | 'recent' | 'collection';
+  type View = 'home' | 'search' | 'liked' | 'device' | 'recent' | 'collection';
   let view = $state<View>('home');
   let report = $state<RuntimeReport | null>(null);
   let checking = $state(true);
   let error = $state<string | null>(null);
   let library = $state<LocalLibrary>({ liked: [], recent: [] });
+  let accountLibrary = $state(emptyAccountLibrary());
+  let libraryLoading = $state(false);
+  let libraryError = $state<string | null>(null);
+  let libraryRequest = 0;
+  let likeBusy = $state(false);
+  let likeRevision = 0;
   let home = $state<HomeFeed | null>(null);
   let homeLoading = $state(false);
   let homeError = $state(false);
   let collection = $state<CollectionPage | null>(null);
   let collectionLoading = $state(false);
   let collectionMore = $state(false);
+  let collectionFromAccount = $state(false);
   let collectionRevision = 0;
   let homeRevision = 0;
   let query = $state('');
@@ -166,7 +183,19 @@
     }
   }
 
-  const likedIds = $derived(new Set(library.liked.map((track) => track.id)));
+  const hasAccountCollection = $derived(account.mode === 'connected' || account.profile !== null);
+  const deviceLikes = $derived(view === 'device' || !hasAccountCollection);
+  const likedIds = $derived(
+    new Set(deviceLikes ? library.liked.map((track) => track.id) : accountLibrary.likedIds),
+  );
+  const likesDisabled = $derived(
+    likeBusy || (!deviceLikes && (account.mode !== 'connected' || !accountLibrary.likesReady)),
+  );
+  const likeDestination = $derived(
+    deviceLikes
+      ? 'Device likes · saved only on this device'
+      : 'YouTube Music · synced with your account',
+  );
   const playing = $derived(playback.status === 'playing' || playback.status === 'buffering');
   const loadingTrack = $derived(
     pending ??
@@ -183,12 +212,16 @@
   const currentIndex = $derived(queue.currentIndex ?? -1);
   const listTracks = $derived(
     view === 'liked'
-      ? library.liked
-      : view === 'recent'
-        ? library.recent
-        : view === 'collection'
-          ? (collection?.tracks ?? [])
-          : (results?.tracks ?? []),
+      ? hasAccountCollection
+        ? accountLibrary.liked
+        : library.liked
+      : view === 'device'
+        ? library.liked
+        : view === 'recent'
+          ? library.recent
+          : view === 'collection'
+            ? (collection?.tracks ?? [])
+            : (results?.tracks ?? []),
   );
 
   onMount(() => {
@@ -249,6 +282,11 @@
                 }
               }),
             ),
+            register(
+              onAccountLibrary((snapshot) => {
+                if (!disposed) updateAccountLibrary(snapshot);
+              }),
+            ),
           ]);
           if (disposed) return;
           await Promise.all([
@@ -294,10 +332,49 @@
     if (revision.account === stateRevision.account) updateAccount(profile);
   }
 
+  function updateAccountLibrary(snapshot: AccountLibrarySnapshot) {
+    if (
+      snapshot.accountRevision !== account.revision ||
+      snapshot.revision < accountLibrary.revision
+    )
+      return;
+    if (snapshot.connected && account.mode !== 'connected') return;
+    accountLibrary = snapshot;
+  }
+
+  async function syncAccountLibrary(force = false) {
+    if (!report || account.mode !== 'connected' || libraryLoading) return;
+    const revision = account.revision;
+    const request = ++libraryRequest;
+    libraryLoading = true;
+    libraryError = null;
+    try {
+      updateAccountLibrary(await getAccountLibrary());
+      if (revision !== account.revision || request !== libraryRequest) return;
+      updateAccountLibrary(await refreshAccountLibrary(revision, force));
+    } catch (failure) {
+      if (request === libraryRequest && revision === account.revision && !isCancelled(failure))
+        libraryError = errorMessage(failure);
+    } finally {
+      if (request === libraryRequest) libraryLoading = false;
+    }
+  }
+
   function updateAccount(snapshot: AccountSnapshot) {
     if (snapshot.revision < account.revision) return;
     const changed = snapshot.revision !== account.revision;
+    const connectionChanged = (snapshot.mode === 'connected') !== (account.mode === 'connected');
     account = snapshot;
+    if (view === 'device' && !snapshot.profile && snapshot.mode !== 'connected') view = 'liked';
+    if (changed || connectionChanged) {
+      libraryRequest++;
+      libraryLoading = false;
+      libraryError = null;
+      accountLibrary = emptyAccountLibrary(snapshot.revision);
+      likeRevision++;
+      likeBusy = false;
+      if (snapshot.mode === 'connected') void syncAccountLibrary();
+    }
     if (changed) {
       homeRevision++;
       homeLoading = false;
@@ -309,6 +386,7 @@
       collectionRevision++;
       collection = null;
       collectionLoading = false;
+      collectionMore = false;
       if (view === 'collection') view = 'home';
       if (view === 'home') void loadHome(true);
       else if (view === 'search' && query.trim().length >= 2) void runSearch();
@@ -379,18 +457,22 @@
     }
   }
 
-  async function openCollection(item: HomeItem, more = false) {
+  async function openCollection(item: HomeItem, more = false, fromAccount = false) {
     if (!report) return;
     const revision = ++collectionRevision;
     view = 'collection';
+    collectionFromAccount = fromAccount;
     error = null;
     if (more) collectionMore = true;
     else {
       collection = { item, tracks: [], hasMore: false };
       collectionLoading = true;
+      collectionMore = false;
     }
     try {
-      const page = await browseCollection(item.id, more);
+      const page = fromAccount
+        ? await browseAccountPlaylist(item.id, account.revision, more)
+        : await browseCollection(item.id, more);
       if (revision === collectionRevision) collection = page;
     } catch (failure) {
       if (revision === collectionRevision && !isCancelled(failure)) error = errorMessage(failure);
@@ -408,7 +490,8 @@
     accountOpen = false;
     if (next === 'search') searchInput?.focus();
     if (next === 'home' && !home && !homeLoading && report) void loadHome();
-    if (next === 'liked' || next === 'recent') void refreshLibrary();
+    if (next === 'liked' || next === 'device' || next === 'recent') void refreshLibrary();
+    if (next === 'liked' && hasAccountCollection) void syncAccountLibrary();
   }
 
   function typing() {
@@ -486,7 +569,7 @@
     pending = track;
     error = null;
     try {
-      const context = ['collection', 'liked', 'recent'].includes(view)
+      const context = ['collection', 'liked', 'device', 'recent'].includes(view)
         ? tracks.map((track) => track.id)
         : [];
       const selection = await playSong(track.id, context);
@@ -512,11 +595,19 @@
   }
 
   async function like(track: Track) {
-    if (!report) return;
+    if (!report || likesDisabled) return;
+    const revision = account.revision;
+    const interaction = ++likeRevision;
+    const local = deviceLikes;
+    const liked = !likedIds.has(track.id);
+    likeBusy = true;
     try {
-      library = await toggleLike(track.id);
+      if (local) library = await toggleLike(track.id);
+      else updateAccountLibrary(await setAccountLike(track.id, liked, revision));
     } catch (failure) {
-      error = errorMessage(failure);
+      if (interaction === likeRevision && !isCancelled(failure)) error = errorMessage(failure);
+    } finally {
+      if (interaction === likeRevision) likeBusy = false;
     }
   }
 
@@ -610,6 +701,7 @@
     if (document.visibilityState === 'visible' && report) {
       try {
         await refreshSession();
+        void syncAccountLibrary();
       } catch (failure) {
         error = errorMessage(failure);
       }
@@ -617,7 +709,11 @@
   }
 </script>
 
-<svelte:window onkeydown={keyboard} bind:innerWidth={viewportWidth} />
+<svelte:window
+  onkeydown={keyboard}
+  onfocus={() => void visibility()}
+  bind:innerWidth={viewportWidth}
+/>
 <svelte:document onvisibilitychange={visibility} />
 <svelte:head><title>Vessel — Your music, a little lighter.</title></svelte:head>
 
@@ -657,16 +753,76 @@
         onclick={() => navigate('liked')}
         aria-current={view === 'liked' ? 'page' : undefined}
         title="Liked songs"
-        ><Heart size={18} /><span>Liked songs</span>{#if library.liked.length}<small
-            >{library.liked.length}</small
+        ><Heart size={18} /><span>Liked songs</span
+        >{#if hasAccountCollection ? accountLibrary.likesReady : library.liked.length}<small
+            >{hasAccountCollection ? accountLibrary.likedIds.length : library.liked.length}</small
           >{/if}</button
       >
+      {#if hasAccountCollection}<button
+          class:active={view === 'device'}
+          onclick={() => navigate('device')}
+          aria-current={view === 'device' ? 'page' : undefined}
+          title="Device likes · saved only on this device"
+          ><HardDrive size={18} /><span>Device likes</span><small>{library.liked.length}</small
+          ></button
+        >{/if}
       <button
         class:active={view === 'recent'}
         onclick={() => navigate('recent')}
         aria-current={view === 'recent' ? 'page' : undefined}
         title="Recently played"><Clock3 size={18} /><span>Recently played</span></button
       >
+      {#if hasAccountCollection}
+        <div class="account-playlists-heading">
+          <p class="sidebar-label">YOUTUBE MUSIC PLAYLISTS</p>
+          <button
+            class="icon-button"
+            aria-label="Refresh YouTube Music library"
+            title="Refresh YouTube Music library"
+            disabled={account.mode !== 'connected' || libraryLoading || accountLibrary.refreshing}
+            onclick={() => void syncAccountLibrary(true)}
+            ><RefreshCw
+              size={13}
+              class={libraryLoading || accountLibrary.refreshing ? 'spin' : ''}
+            /></button
+          >
+        </div>
+        {#each accountLibrary.playlists as item (item.id)}
+          <button
+            class:active={view === 'collection' &&
+              collectionFromAccount &&
+              collection?.item.id === item.id}
+            aria-current={view === 'collection' &&
+            collectionFromAccount &&
+            collection?.item.id === item.id
+              ? 'page'
+              : undefined}
+            title={item.title}
+            onclick={() => void openCollection(item, false, true)}
+            ><ListMusic size={18} /><span>{item.title}</span></button
+          >
+        {/each}
+        {#if account.mode !== 'connected'}<p class="sidebar-library-status">
+            Reconnect your account to sync.
+          </p>
+        {:else if libraryLoading || accountLibrary.refreshing}<p
+            class="sidebar-library-status"
+            role="status"
+          >
+            Syncing your library…
+          </p>
+        {:else if libraryError || accountLibrary.playlistsError}<p
+            class="sidebar-library-status"
+            role="status"
+          >
+            Playlists could not sync. Refresh to retry.
+          </p>
+        {:else if accountLibrary.playlistsReady && !accountLibrary.playlists.length}<p
+            class="sidebar-library-status"
+          >
+            Saved playlists will appear here.
+          </p>{/if}
+      {/if}
     </nav>
     <div class="sidebar-bottom">
       <div class="native-note">
@@ -803,6 +959,8 @@
             {playing}
             pendingId={pending?.id}
             {likedIds}
+            {likesDisabled}
+            {likeDestination}
             onplay={(track) => void select(track)}
             onlike={(track) => void like(track)}
             onartist={find}
@@ -811,7 +969,7 @@
                 class="secondary-button"
                 disabled={collectionMore}
                 onclick={() => {
-                  if (collection) void openCollection(collection.item, true);
+                  if (collection) void openCollection(collection.item, true, collectionFromAccount);
                 }}>{collectionMore ? 'Loading songs…' : 'Show more songs'}</button
               >
             </div>{/if}
@@ -861,6 +1019,8 @@
             {playing}
             pendingId={pending?.id}
             {likedIds}
+            {likesDisabled}
+            {likeDestination}
             onplay={(track) => void select(track)}
             onlike={(track) => void like(track)}
             onartist={find}
@@ -891,41 +1051,105 @@
           </div>{/if}
       {:else}
         <section class="collection-heading">
-          <span class="collection-icon" class:heart={view === 'liked'}
-            >{#if view === 'liked'}<Heart size={34} strokeWidth={1.3} />{:else}<Clock3
+          <span class="collection-icon" class:heart={view === 'liked' || view === 'device'}
+            >{#if view === 'device'}<HardDrive
+                size={34}
+                strokeWidth={1.3}
+              />{:else if view === 'liked'}<Heart size={34} strokeWidth={1.3} />{:else}<Clock3
                 size={34}
                 strokeWidth={1.3}
               />{/if}</span
           >
           <div>
-            <p class="eyebrow">YOUR COLLECTION · ON THIS MAC</p>
-            <h1>{view === 'liked' ? 'Liked songs' : 'Recently played'}</h1>
+            <p class="eyebrow">
+              YOUR COLLECTION · {view === 'liked' && hasAccountCollection
+                ? 'YOUTUBE MUSIC'
+                : 'ON THIS DEVICE'}
+            </p>
+            <h1>
+              {view === 'device'
+                ? 'Device likes'
+                : view === 'liked'
+                  ? 'Liked songs'
+                  : 'Recently played'}
+            </h1>
             <p>
-              {listTracks.length} songs · {view === 'liked'
-                ? 'Good music, kept close.'
-                : 'Pick up a familiar feeling.'}
+              {listTracks.length} songs · {view === 'device'
+                ? 'Saved only on this device.'
+                : view === 'liked' && hasAccountCollection
+                  ? 'Synced with your YouTube Music account.'
+                  : view === 'liked'
+                    ? 'Good music, kept close.'
+                    : 'Pick up a familiar feeling.'}
             </p>
           </div>
         </section>
+        {#if view === 'liked' && hasAccountCollection}
+          <div class="account-library-toolbar">
+            <span role="status"
+              >{likeBusy
+                ? 'Saving changes to YouTube Music…'
+                : libraryLoading || accountLibrary.refreshing
+                  ? 'Syncing your library…'
+                  : account.mode !== 'connected'
+                    ? 'Reconnect your Google account to sync likes.'
+                    : accountLibrary.likesReady
+                      ? `${accountLibrary.likedIds.length} account likes`
+                      : 'Your account likes have not synced yet.'}</span
+            >
+            <button
+              class="secondary-button"
+              disabled={account.mode !== 'connected' || libraryLoading || accountLibrary.refreshing}
+              onclick={() => void syncAccountLibrary(true)}
+              ><RefreshCw size={14} />Refresh likes</button
+            >
+          </div>
+          {#if libraryError || accountLibrary.likesError}<div
+              class="notice error-notice"
+              role="alert"
+            >
+              {libraryError ?? accountLibrary.likesError?.message}
+            </div>{/if}
+        {/if}
         {#if listTracks.length}<TrackList
             tracks={listTracks}
             activeId={playback.track?.id}
             {playing}
             pendingId={pending?.id}
             {likedIds}
+            {likesDisabled}
+            {likeDestination}
             onplay={(track) => void select(track)}
             onlike={(track) => void like(track)}
             onartist={find}
           />
+        {:else if view === 'liked' && hasAccountCollection && !accountLibrary.likesReady}<div
+            class="empty-collection"
+            role="status"
+          >
+            {#if libraryLoading || accountLibrary.refreshing}<LoaderCircle
+                size={28}
+                class="spin"
+              />{:else}<Heart size={28} />{/if}
+            <h2>
+              {libraryLoading || accountLibrary.refreshing
+                ? 'Bringing your favorites home…'
+                : 'Your account likes are not available yet.'}
+            </h2>
+            <p>
+              Connect your account and refresh to load your YouTube Music likes. Device likes are
+              kept separately.
+            </p>
+          </div>
         {:else}<div class="empty-collection">
             <Library size={32} strokeWidth={1.3} />
             <h2>
-              {view === 'liked'
+              {view === 'liked' || view === 'device'
                 ? 'Make room for your favorites.'
                 : 'Your listening story starts here.'}
             </h2>
             <p>
-              {view === 'liked'
+              {view === 'liked' || view === 'device'
                 ? 'Tap the heart beside a song to keep it here.'
                 : 'The songs you listen to will find a home here.'}
             </p>
@@ -943,6 +1167,8 @@
       {playback}
       loading={Boolean(loadingTrack)}
       liked={likedIds.has(shownTrack.id)}
+      {likesDisabled}
+      {likeDestination}
       onclose={closeArtwork}
       onlike={() => void like(shownTrack)}
     />
@@ -954,6 +1180,8 @@
     {inspection}
     {busy}
     liked={Boolean(playback.track && likedIds.has(playback.track.id))}
+    {likesDisabled}
+    {likeDestination}
     transitioning={queue.transitioning}
     canPrevious={currentIndex >= 0}
     canNext={currentIndex >= 0 &&

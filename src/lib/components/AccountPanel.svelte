@@ -62,14 +62,15 @@
     <button class="secondary-button" disabled={busy} onclick={oncancel}>Cancel sign-in</button>
   {:else if account.mode === 'connected'}
     <p class="account-description">
-      Connected to YouTube Music. Home and radio can use your account’s recommendations.
+      Your likes and saved playlists sync with YouTube Music. Home and radio can use your account’s
+      recommendations.
     </p>
     <button class="secondary-button" disabled={busy} onclick={onsignout}
       ><LogOut size={15} />Sign out</button
     >
   {:else}
     <p class="account-description">
-      Connect Google for your YouTube Music recommendations and account-required songs.
+      Connect Google for your YouTube Music likes, saved playlists, and recommendations.
     </p>
     <button class="primary-button connect-google" disabled={!available || busy} onclick={onconnect}
       >{#if busy}<LoaderCircle size={15} class="spin" />{/if}{account.mode === 'expired'

@@ -231,6 +231,55 @@ kbd {
 }
 .sidebar-bottom {
   margin-top: auto;
+  flex-shrink: 0;
+}
+.sidebar nav {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sidebar nav > button > svg {
+  flex-shrink: 0;
+}
+.sidebar nav > button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-playlists-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+.account-playlists-heading .sidebar-label {
+  margin: 0;
+  font-size: 7px;
+}
+.sidebar-library-status {
+  padding: 6px 13px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--theme-glass-secondary);
+}
+.account-library-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  color: var(--theme-glass-secondary);
+  font-size: 12px;
+}
+.sidebar-compact .sidebar-library-status {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sidebar-library-status {
+    display: none;
+  }
 }
 .native-note {
   display: flex;

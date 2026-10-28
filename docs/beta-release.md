@@ -1,9 +1,10 @@
-# Vessel 0.1.0-beta.5
+# Vessel 0.1.0-beta.6
 
 Private Apple Silicon macOS and Windows x64 development beta. This is a prerelease, not a stable release.
 
 ## Included changes
 
+- Account likes now read from YouTube Music and hearts write back to the verified account. Saved account playlists appear in the sidebar and open with song pagination. Device-only likes remain separate and survive sign-out. Refresh from the sidebar/likes view or return to the app (one-minute refresh reuse). See [account library behavior](radio-and-accounts.md#account-library-sync-2026-10-28).
 - Appearance and Queue panel backgrounds now follow the shared glass tint live instead of fixed 90%/94% alpha. Local reading materials retain label/track contrast; 100% tint and reduced-transparency mode are fully opaque.
 - Glass readability: local reading materials, stronger semantic text/error contrast, tonal selected/hover states, readable queue history, and OS increased-contrast support. Existing tint/accent preferences are preserved. See [glass readability](glass-readability.md).
 - Windows x64 NSIS installer with pinned Windows playback/extraction runtimes, WebView2 setup, DPAPI-protected remembered sessions, native Windows media controls, and bounded extractor process cleanup. See [Windows builds](windows-build.md).
@@ -18,11 +19,11 @@ Private Apple Silicon macOS and Windows x64 development beta. This is a prerelea
 
 ### macOS
 
-Download `Vessel-0.1.0-beta.5-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+Download `Vessel-0.1.0-beta.6-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
 
 ### Windows
 
-Run `Vessel-0.1.0-beta.5-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
+Run `Vessel-0.1.0-beta.6-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
 
 ### First launch if macOS blocks Vessel
 

@@ -8,6 +8,8 @@
     playback,
     loading,
     liked,
+    likesDisabled = false,
+    likeDestination = 'Saved only on this device',
     onclose,
     onlike,
   }: {
@@ -15,6 +17,8 @@
     playback: PlaybackSnapshot;
     loading: boolean;
     liked: boolean;
+    likesDisabled?: boolean;
+    likeDestination?: string;
     onclose: () => void;
     onlike: () => void;
   } = $props();
@@ -46,6 +50,8 @@
       class:liked
       aria-label={liked ? 'Unsave artwork song' : 'Save artwork song'}
       aria-pressed={liked}
+      disabled={likesDisabled}
+      title={likeDestination}
       onclick={onlike}><Heart size={18} fill={liked ? 'currentColor' : 'none'} /></button
     >
   </div>

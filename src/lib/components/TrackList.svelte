@@ -9,6 +9,8 @@
     playing,
     pendingId,
     likedIds,
+    likesDisabled = false,
+    likeDestination = 'Saved only on this device',
     onplay,
     onlike,
     onartist,
@@ -18,6 +20,8 @@
     playing: boolean;
     pendingId?: string;
     likedIds: Set<string>;
+    likesDisabled?: boolean;
+    likeDestination?: string;
     onplay: (track: Track) => void;
     onlike: (track: Track) => void;
     onartist: (artist: string) => void;
@@ -75,6 +79,8 @@
             class:liked={likedIds.has(track.id)}
             aria-label={`${likedIds.has(track.id) ? 'Unsave' : 'Save'} ${track.title}`}
             aria-pressed={likedIds.has(track.id)}
+            disabled={likesDisabled}
+            title={likeDestination}
             onclick={() => onlike(track)}
             ><Heart size={16} fill={likedIds.has(track.id) ? 'currentColor' : 'none'} /></button
           ></td

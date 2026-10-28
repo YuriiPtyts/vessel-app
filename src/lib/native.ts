@@ -61,6 +61,32 @@ export interface LocalLibrary {
   liked: Track[];
   recent: Track[];
 }
+export interface AccountLibrarySnapshot {
+  revision: number;
+  accountRevision: number;
+  connected: boolean;
+  refreshing: boolean;
+  likesReady: boolean;
+  playlistsReady: boolean;
+  liked: Track[];
+  likedIds: string[];
+  playlists: HomeItem[];
+  likesError: AppError | null;
+  playlistsError: AppError | null;
+}
+export const emptyAccountLibrary = (accountRevision = 0): AccountLibrarySnapshot => ({
+  revision: 0,
+  accountRevision,
+  connected: false,
+  refreshing: false,
+  likesReady: false,
+  playlistsReady: false,
+  liked: [],
+  likedIds: [],
+  playlists: [],
+  likesError: null,
+  playlistsError: null,
+});
 export interface PlaybackSelection {
   inspection: TrackInspection;
   playback: PlaybackSnapshot;
@@ -160,6 +186,15 @@ export const playSong = (videoId: string, context: string[] = []) =>
   invoke<PlaybackSelection>('play_song', { videoId, context });
 export const getLibrary = () => invoke<LocalLibrary>('local_library');
 export const toggleLike = (videoId: string) => invoke<LocalLibrary>('toggle_like', { videoId });
+export const getAccountLibrary = () => invoke<AccountLibrarySnapshot>('account_library');
+export const refreshAccountLibrary = (accountRevision: number, force = false) =>
+  invoke<AccountLibrarySnapshot>('refresh_account_library', { accountRevision, force });
+export const setAccountLike = (videoId: string, liked: boolean, accountRevision: number) =>
+  invoke<AccountLibrarySnapshot>('set_account_like', { videoId, liked, accountRevision });
+export const browseAccountPlaylist = (id: string, accountRevision: number, more = false) =>
+  invoke<CollectionPage>('account_playlist', { id, accountRevision, more });
+export const onAccountLibrary = (callback: (snapshot: AccountLibrarySnapshot) => void) =>
+  listen<AccountLibrarySnapshot>('account-library-state', ({ payload }) => callback(payload));
 export const setMaterialMode = (reduced: boolean) => invoke<void>('set_material_mode', { reduced });
 export const cancelInspection = () => invoke<void>('cancel_inspection');
 export const playTrack = (trackId: string, formatId: string) =>

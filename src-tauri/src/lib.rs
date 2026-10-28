@@ -1,4 +1,5 @@
 pub mod account;
+pub mod account_library;
 pub mod application;
 pub mod catalog;
 mod direct;

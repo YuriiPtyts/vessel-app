@@ -9,6 +9,7 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore, watch};
 
 use crate::{
     account::{Account, AccountMode, AccountSnapshot, CookieSession, MemoryVault, SessionVault},
+    account_library::{AccountLibrary, AccountLibrarySnapshot},
     catalog::{MusicCatalog, SearchKind, SearchResults},
     error::{AppError, Result},
     library::{LibrarySnapshot, LocalLibrary},
@@ -24,6 +25,7 @@ pub enum AppEvent {
     Queue(QueueSnapshot),
     Selection(Option<TrackInspection>),
     Account(AccountSnapshot),
+    AccountLibrary(AccountLibrarySnapshot),
 }
 
 pub struct Application {
@@ -37,6 +39,7 @@ pub struct Application {
     resolver: provider::Resolver,
     library: Arc<LocalLibrary>,
     account: Arc<Account>,
+    account_library: AccountLibrary,
     queue: Mutex<RadioQueue>,
     events: Arc<dyn Fn(AppEvent) + Send + Sync>,
     transition: AsyncMutex<()>,
@@ -100,6 +103,11 @@ impl Application {
         let history = library.clone();
         let last_played = Mutex::new(None::<u64>);
         let account = Account::new(vault);
+        let library_events = events.clone();
+        let account_library = AccountLibrary::new(
+            account.clone(),
+            Arc::new(move |snapshot| library_events(AppEvent::AccountLibrary(snapshot))),
+        );
         let app = Arc::new(Self {
             player: Player::new(
                 paths.clone(),
@@ -123,6 +131,7 @@ impl Application {
             paths,
             catalog: MusicCatalog::with_account(account.clone())?,
             account,
+            account_library,
             library,
             resolved: Mutex::new(None),
             resolver_slot: Semaphore::new(1),
@@ -165,6 +174,7 @@ impl Application {
                         if change.is_err() { break; }
                         let status = account.borrow_and_update().clone();
                         let Some(app) = weak.upgrade() else { break };
+                        let _ = app.account_library.synchronize_account();
                         if status.revision != account_revision {
                             account_revision = status.revision;
                             app.catalog.invalidate();
@@ -182,6 +192,13 @@ impl Application {
                             if let Ok(snapshot) = app.snapshot() { app.handle_playback(&snapshot); }
                         }
                         (app.events)(AppEvent::Account(status));
+                        if app.account().mode == AccountMode::Connected {
+                            let request = Arc::downgrade(&app);
+                            let revision = app.account().revision;
+                            tauri::async_runtime::spawn(async move {
+                                if let Some(app) = request.upgrade() { let _ = app.refresh_account_library(false, revision).await; }
+                            });
+                        }
                     }
                     _ = closing.changed() => break,
                 }
@@ -269,6 +286,61 @@ impl Application {
         self.catalog.collection(id, more).await
     }
 
+    pub fn account_library(&self) -> Result<AccountLibrarySnapshot> {
+        self.account_library.snapshot()
+    }
+    pub async fn refresh_account_library(
+        &self,
+        force: bool,
+        revision: u64,
+    ) -> Result<AccountLibrarySnapshot> {
+        self.account_library
+            .refresh(&self.catalog, force, revision)
+            .await
+    }
+    pub async fn account_playlist(
+        &self,
+        id: &str,
+        more: bool,
+        revision: u64,
+    ) -> Result<crate::home::CollectionPage> {
+        self.account_library
+            .collection(&self.catalog, id, more, revision)
+            .await
+    }
+    pub async fn set_account_like(
+        &self,
+        id: &str,
+        liked: bool,
+        revision: u64,
+    ) -> Result<AccountLibrarySnapshot> {
+        self.account_library.check_revision(revision)?;
+        let track = self.find_track(id).ok_or_else(|| {
+            AppError::new(
+                "unknown_track",
+                "Search for this track again before saving it.",
+                true,
+            )
+        })?;
+        self.account_library
+            .set_like(&self.catalog, track, liked, revision)
+            .await
+    }
+    fn find_track(&self, id: &str) -> Option<Track> {
+        self.catalog
+            .find_track(id)
+            .or_else(|| self.account_library.find_track(id))
+            .or_else(|| self.library.find(id))
+            .or_else(|| {
+                self.queue()
+                    .ok()?
+                    .tracks
+                    .into_iter()
+                    .find(|track| track.id == id)
+            })
+            .or_else(|| self.snapshot().ok()?.track.filter(|track| track.id == id))
+    }
+
     pub async fn play_song(self: &Arc<Self>, id: &str) -> Result<PlaybackSelection> {
         self.play_song_with_context(id, Vec::new()).await
     }
@@ -286,18 +358,11 @@ impl Application {
         }
         self.cancel_inspection();
         self.cancel_radio();
-        let metadata = self
-            .catalog
-            .find_track(id)
-            .or_else(|| self.library.find(id));
+        let metadata = self.find_track(id);
         let context: Vec<_> = context
             .iter()
             .take(100)
-            .filter_map(|id| {
-                self.catalog
-                    .find_track(id)
-                    .or_else(|| self.library.find(id))
-            })
+            .filter_map(|id| self.find_track(id))
             .collect();
         let generation = {
             self.queue.lock().map_err(|_| AppError::internal())?.begin(
@@ -660,18 +725,13 @@ impl Application {
         self.library.snapshot()
     }
     pub fn toggle_like(&self, id: &str) -> Result<LibrarySnapshot> {
-        let track = self
-            .catalog
-            .find_track(id)
-            .or_else(|| self.library.find(id))
-            .or_else(|| self.snapshot().ok()?.track.filter(|track| track.id == id))
-            .ok_or_else(|| {
-                AppError::new(
-                    "unknown_track",
-                    "Search for this track again before saving it.",
-                    true,
-                )
-            })?;
+        let track = self.find_track(id).ok_or_else(|| {
+            AppError::new(
+                "unknown_track",
+                "Search for this track again before saving it.",
+                true,
+            )
+        })?;
         self.library.toggle_like(track)
     }
     pub fn cancel_inspection(&self) {
@@ -717,6 +777,7 @@ impl Application {
         (self.events)(AppEvent::Selection(None));
         self.resolver.invalidate();
         self.catalog.invalidate();
+        self.account_library.synchronize_account()?;
         Ok(snapshot)
     }
     async fn restore_account(&self) {
@@ -796,6 +857,7 @@ impl Application {
         self.cancel_inspection();
         self.cancel_radio();
         self.catalog.cancel();
+        self.account_library.cancel();
         self.player.shutdown();
     }
 }

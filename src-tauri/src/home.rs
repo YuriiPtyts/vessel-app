@@ -119,7 +119,10 @@ fn from_track(track: Track) -> HomeItem {
     }
 }
 
-fn parse_card(row: &Value, targets: &mut BTreeMap<String, CollectionTarget>) -> Option<HomeItem> {
+pub(crate) fn parse_card(
+    row: &Value,
+    targets: &mut BTreeMap<String, CollectionTarget>,
+) -> Option<HomeItem> {
     let title = text(row.get("title"));
     if title.is_empty() {
         return None;

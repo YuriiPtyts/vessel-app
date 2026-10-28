@@ -50,6 +50,8 @@ Vessel-app/
 │   │   ├── radio.rs                      Radio track and continuation parsing
 │   │   ├── library.rs                    Local likes and listening history
 │   │   ├── account.rs                    Verified account lifecycle and credential boundary
+│   │   ├── account_library.rs            Account likes, saved playlists, and rating synchronization
+│   │   ├── account_library_tests.rs      Authenticated HTTP fixtures and account-race regressions
 │   │   ├── account/windows_vault.rs      Current-user DPAPI session storage
 │   │   ├── sign_in.rs                    Isolated Google window and Rust cookie handling
 │   │   ├── media_controls.rs             macOS Now Playing and media commands

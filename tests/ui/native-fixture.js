@@ -70,7 +70,31 @@ export async function nativeFixture(page, options = {}) {
       thumbnailUrl: tracks[1].thumbnailUrl,
       track: null,
     };
-    let library = { liked: [], recent: [] };
+    let library = { liked: options.deviceLikes ? [tracks[0]] : [], recent: [] };
+    const savedPlaylist = {
+      ...collectionItem,
+      id: 'VLaccount_saved',
+      title: 'Saved discoveries',
+      subtitle: 'Your YouTube Music playlist',
+    };
+    let remoteLiked = [tracks[1]];
+    let libraryRevision = 0;
+    let accountLibrary = null;
+    function accountLibrarySnapshot(ready = true) {
+      return {
+        revision: ++libraryRevision,
+        accountRevision: account.revision,
+        connected: account.mode === 'connected',
+        refreshing: false,
+        likesReady: ready,
+        playlistsReady: ready,
+        liked: ready ? structuredClone(remoteLiked) : [],
+        likedIds: ready ? remoteLiked.map((track) => track.id) : [],
+        playlists: ready ? [savedPlaylist] : [],
+        likesError: null,
+        playlistsError: null,
+      };
+    }
     let snapshot = {
       playbackId: 0,
       accountSource: false,
@@ -155,6 +179,7 @@ export async function nativeFixture(page, options = {}) {
     }
     window.isTauri = true;
     window.__vesselCalls = [];
+    window.__vesselLibraryReplies = 0;
     window.__vesselVolumeInFlight = 0;
     window.__vesselMaxVolumeInFlight = 0;
     window.__vesselEmitSnapshot = (override) =>
@@ -186,6 +211,10 @@ export async function nativeFixture(page, options = {}) {
       };
       emit('account-state', account);
     };
+    window.__vesselSetRemoteLikes = (indices) => {
+      remoteLiked = indices.map((index) => tracks[index]);
+    };
+    window.__vesselEmitAccountLibrary = (payload) => emit('account-library-state', payload);
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
     window.__TAURI_INTERNALS__ = {
       transformCallback(callback) {
@@ -221,6 +250,51 @@ export async function nativeFixture(page, options = {}) {
             return structuredClone(inspection);
           case 'local_library':
             return structuredClone(library);
+          case 'account_library':
+            if (accountLibrary?.accountRevision !== account.revision)
+              accountLibrary = accountLibrarySnapshot(false);
+            return structuredClone(accountLibrary);
+          case 'refresh_account_library': {
+            const reply = accountLibrarySnapshot();
+            if (options.libraryDelay)
+              await new Promise((resolve) => setTimeout(resolve, options.libraryDelay));
+            if (options.likesFailure) {
+              reply.likesReady = false;
+              reply.liked = [];
+              reply.likedIds = [];
+              reply.likesError = {
+                code: 'account_library_unavailable',
+                message: 'Your YouTube Music likes could not sync. Refresh to retry.',
+                retryable: true,
+              };
+            }
+            accountLibrary = reply;
+            emit('account-library-state', reply);
+            window.__vesselLibraryReplies++;
+            return structuredClone(reply);
+          }
+          case 'set_account_like': {
+            if (options.likeDelay)
+              await new Promise((resolve) => setTimeout(resolve, options.likeDelay));
+            if (options.likeFailure)
+              throw {
+                code: 'account_like_failed',
+                message: 'YouTube Music did not confirm this like change.',
+                retryable: true,
+              };
+            const track = tracks.find((track) => track.id === args.videoId);
+            remoteLiked = remoteLiked.filter((track) => track.id !== args.videoId);
+            if (args.liked) remoteLiked.unshift(track);
+            accountLibrary = accountLibrarySnapshot();
+            emit('account-library-state', accountLibrary);
+            return structuredClone(accountLibrary);
+          }
+          case 'account_playlist':
+            return {
+              item: savedPlaylist,
+              tracks: structuredClone(args.more ? tracks : tracks.slice(0, 2)),
+              hasMore: !args.more,
+            };
           case 'home_feed':
             return {
               personalized: account.mode === 'connected',

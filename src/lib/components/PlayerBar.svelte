@@ -33,6 +33,8 @@
     busy,
     transitioning,
     liked,
+    likesDisabled = false,
+    likeDestination = 'Saved only on this device',
     canPrevious,
     canNext,
     onpause,
@@ -56,6 +58,8 @@
     busy: boolean;
     transitioning: boolean;
     liked: boolean;
+    likesDisabled?: boolean;
+    likeDestination?: string;
     canPrevious: boolean;
     canNext: boolean;
     onpause: () => void;
@@ -144,7 +148,8 @@
       class:liked
       aria-label={liked ? 'Unsave current song' : 'Save current song'}
       aria-pressed={liked}
-      disabled={!playback.track}
+      disabled={!playback.track || likesDisabled}
+      title={likeDestination}
       onclick={onlike}><Heart size={16} fill={liked ? 'currentColor' : 'none'} /></button
     >
   </div>

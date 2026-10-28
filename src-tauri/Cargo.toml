@@ -1,6 +1,6 @@
 [package]
 name = "vessel-app"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 description = "A lightweight, search-first desktop music client"
 edition = "2024"
 rust-version = "1.90"
