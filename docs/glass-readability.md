@@ -30,7 +30,7 @@ VESSEL_UI_BROWSER=chromium npm run test:ui -- tests/ui/appearance-controls.spec.
 - Explicit modes are checked at 50%, 69%, 70%, 75%, 90%, and 100% over white, dark, and patterned backgrounds. Mode, tint, palette, and migration/persistence have independent assertions.
 - The flash regression delays old mask-image loads, samples opening/settled frames and both player edges, and scrolls Appearance. It fails with the old image masks and passes with inline vector clips.
 - Sidebar coverage retains 80 playlists, actual wheel scrolling, and reachable controls at 1100×700 and 420×800.
-- Text checks require 4.5:1 for ordinary text and 3:1 for large headings. The final Home/search samples measure at least **5.05:1**, using the outline-aware model where the glyph edge is active.
+- Text checks require 4.5:1 for ordinary text and 3:1 for large headings. Beta.9 dark 50% samples measure at least **5.23:1 in WebKit** and **5.79:1 in Chromium**, using the actual painted halo behind filled glyph cores. Other Home/search mode and tint fixtures retain their existing thresholds.
 
 For plain text, `tests/ui/contrast.js` compares declared ink with rendered backgrounds. For halo-backed text it takes two renders: normal text and transparent fill with the actual shadow retained. It checks visible glyph cores with at least 70% fill coverage against their real halo background; missing cores fail rather than silently disappearing from the audit. A regression removes the halo and verifies that unprotected dark-mode text fails on the bright fixture. Text-stroke width must remain zero.
 

@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It follows the project through **Vessel 0.1.0-beta.8** on **October 28, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.9** on **October 28, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -66,6 +66,8 @@ The project grew in working stages. We tested individual pieces before adding mo
 The [Git history](https://github.com/YuriiPtyts/vessel-app/commits/main/) records these changes. The [verification log](verification.md) records what was actually tested at each stage.
 
 Beta.8 separates Light/Dark from transparency, gives panels a balanced opening animation, adds outside-click closing, and removes Device likes from the interface. It also replaces loaded background masks with live vector cutouts to fix the brief clear-window flash and gaps at the player edges.
+
+Beta.9 adds the missing Windows native transparency setup, handles more trusted Google/YouTube sign-in completion paths, and replaces thin text outlines with filled, heavier letters and a shadow at high transparency. These fixes leave the chosen mode, background colors, icons, and saved data intact.
 
 ## 3. The basic structure
 
@@ -266,7 +268,7 @@ To prevent old work replacing new work, requests carry numbers tied to the curre
 
 Google sign-in opens Google's own page in an isolated native window. Vessel does not provide its own password form.
 
-Rust reads the browser session after the sign-in flow returns to YouTube Music and asks the provider to verify the account. Loading a page or finding an arbitrary cookie is not enough to display Connected.
+Rust reads the browser session after the sign-in flow reaches a trusted YouTube completion page and asks YouTube Music to verify the account. It checks cookies available to Music first, allows the YouTube consent redirect, and retries incomplete verification briefly. A 45-second verification limit prevents a pending handoff from waiting indefinitely. Loading a page or finding an arbitrary cookie is not enough to display Connected; saving a verified session remains a separate protected step.
 
 Remembered sessions use:
 
@@ -318,11 +320,13 @@ Sign-out forgets the stored Google session, clears the dedicated sign-in browser
 
 Light/Dark has its own buttons in Appearance and a sun/moon shortcut in the top bar. Glass tint ranges from 50% to 100% and changes only transparency. It never switches the mode or recolors surfaces/icons. When the glass is very clear, only letters receive extra contrast. At 100%, or with reduced transparency, the chosen material becomes solid.
 
+Below 70% tint, dark mode uses filled, heavier white text with a dark shadow behind the letters. We removed the thin outline because it made small letters harder to read. Light mode keeps dark text with extra weight.
+
 All main areas share the same material level. Floating panels use live vector cutouts instead of loading replacement mask images, so the background stays painted while a menu opens. Appearance's contents scroll inside its fixed background. Menus close on outside clicks or Escape, and the outside control still works.
 
 Saved playlists now scroll in their own sidebar area. The main navigation and Appearance/Account controls stay in place, even with a long playlist list.
 
-On supported macOS versions, the window uses Apple's native clear-glass effect, with a fallback on older systems. This is separate from CSS styling inside the page. Windows shares the interface and preferences but does not gain Apple's native glass effect.
+On supported macOS versions, the window uses Apple's native clear-glass effect, with a fallback on older systems. Windows uses a transparent WebView2 surface and Microsoft's Acrylic backdrop, subject to Windows' transparency settings. These native effects are separate from CSS styling inside the page; reduced transparency removes the native effect and makes the chosen material solid.
 
 Panels now open with a short, proportional scale and content fade. The old stretched genie is gone; the background keeps its alpha during the reveal. Reduced motion opens panels immediately. Artwork is loaded from provider image addresses, with a fallback if an optional larger image fails.
 
@@ -370,6 +374,12 @@ Network replies do not always arrive in the order requests were made. A reply fr
 
 A number for the current account session and a number for the latest update are checked before accepting results in Rust and the interface. Tests deliberately delay replies, sign out, and then deliver the old results. Local and account collections also use separate storage paths.
 
+### Windows glass and sign-in needed their own native checks
+
+Transparent page colors cannot reveal the desktop if the native window or embedded web display is still opaque. The old Windows setup left that layer opaque, and its material-change command did nothing. Beta.9 clears both backgrounds and explicitly applies or removes Acrylic.
+
+The sign-in controller also waited only for the Music host and rejected a YouTube consent page. It now accepts trusted YouTube completion paths, reads suitable authentication-cookie candidates without requiring an unrelated extra cookie, and gives partial verification a bounded retry. The provider must still confirm the account before it is connected or saved. A dummy native-cookie check exercises the Windows handoff without entering a real Google password; the owner's actual account still needs a retry.
+
 See [startup](startup-and-materials.md), [volume](volume-response.md), [device investigation](audio-device-investigation.md), and [package signing](macos-distribution.md) for the detailed evidence.
 
 ## 12. How we test the app
@@ -385,14 +395,14 @@ We use different tests for different questions. One type cannot stand in for all
 | Live guest tests                | Real provider search, browsing, source resolution, and native decoding work in the tested run.                                        | Premium behavior, every region/song, or subjective sound quality.                  |
 | Native/package tests            | Real windows, protected storage fixtures, installed dependencies, package integrity, and launch/quit work in the checked environment. | Every OS version, real media-key delivery, or physical speaker/headphone behavior. |
 
-For beta.8, the recorded checks include:
+For beta.9, the recorded checks include:
 
 - **52 WebKit interface tests and 28 focused Chromium tests.** Both explicit modes are checked over bright/dark/patterned backgrounds at six tint values. Tests also cover proportional reveals, outside clicks, delayed-mask flashes, player edges, Appearance scrolling, account-only likes, and the 80-playlist sidebar.
-- **44 ordinary Rust library tests on macOS** and **46 on Windows**, plus the command-origin and non-network integration checks.
+- **50 ordinary Rust library tests on macOS** and **52 on Windows**, plus two binary tests and the non-network integration check. New tests cover trusted sign-in pages, cookie candidates, verification retry/time limits/cancellation, and Windows transparency configuration.
 - Successful frontend checks/builds, Rust formatting, and Clippy checks.
-- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.8 native-window check loaded three live Home shelves.
+- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.9 native-window check loaded three live Home shelves.
 - macOS ZIP/DMG integrity, 107 signatures, and an eight-second extracted-app launch followed by normal quit.
-- Windows native WebView2, Rust command calls, media-control availability, installed-runtime decoding/volume, install, normal launch/quit, and uninstall.
+- Windows native WebView2 transparency and Acrylic removal/reapply, Rust command calls, media-control availability, installed-runtime decoding/volume, install, normal launch/quit, and uninstall. A native private-browser dummy-cookie check also captures the session and closes the handoff without falsely connecting an account.
 
 Some native/network tests run only when explicitly requested, so ordinary test totals do not include every experiment. Muted or silent-output decoding tests are not listening tests. The [verification log](verification.md) keeps those distinctions and the measured results.
 
@@ -441,7 +451,7 @@ The installed app includes the tools it needs. **The listener does not install P
 
 GitHub Actions builds and checks Windows on a real Windows runner. macOS builds and native checks have been run on the available Apple Silicon host. That is different from proving support on every declared minimum operating-system version.
 
-The [beta.8 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.8) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
+The [beta.9 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.9) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
 
 The repository contains the app source and build instructions. Large downloaded tools, built apps, caches, and test artifacts are generated separately and kept out of source commits.
 
