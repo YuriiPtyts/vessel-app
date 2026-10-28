@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It follows the project through **Vessel 0.1.0-beta.7** on **October 28, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.8** on **October 28, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -36,7 +36,7 @@ You can:
 - Pause, seek, change volume, and choose from the audio formats actually available.
 - Keep a queue, play related songs automatically, and use operating-system media controls.
 - Listen as a guest or connect a Google account.
-- Keep device-only likes, view recent listening, and use account likes separately.
+- Use YouTube Music account likes and return to recent listening on this computer.
 - Change colors, transparency, row spacing, sidebar layout, and artwork display.
 
 Vessel is an **audio player**, including when you select a music-video search result. It does not show the video. It also does not turn YouTube's audio into lossless audio or guarantee access to Premium-only formats.
@@ -64,6 +64,8 @@ The project grew in working stages. We tested individual pieces before adding mo
 | Sidebar and shared glass, beta.7   | A separate scrolling playlist area, one transparency level, and text that changes between dark and light.               | Keeps Appearance reachable and removes the dark reading blocks that made the glass look uneven.         |
 
 The [Git history](https://github.com/YuriiPtyts/vessel-app/commits/main/) records these changes. The [verification log](verification.md) records what was actually tested at each stage.
+
+Beta.8 separates Light/Dark from transparency, gives panels a balanced opening animation, adds outside-click closing, and removes Device likes from the interface. It also replaces loaded background masks with live vector cutouts to fix the brief clear-window flash and gaps at the player edges.
 
 ## 3. The basic structure
 
@@ -273,16 +275,11 @@ Remembered sessions use:
 
 On restart, the app checks a remembered session before using it as a verified connection. Google may refuse embedded sign-in or expire a session. Guest listening remains available when account connection fails.
 
-### The two kinds of likes
+### Likes belong to YouTube Music
 
-| Collection              | What it means                                                          | What changes it                                                                 |
-| ----------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| **Device likes**        | Favorites saved only on this computer. Existing local likes stay here. | Hearts while viewing Device likes. Guests use the local Liked songs experience. |
-| **Account Liked songs** | Likes read from the connected YouTube Music account.                   | Account heart actions send explicit like/unlike requests to YouTube Music.      |
+Liked songs and heart actions use the connected, verified YouTube Music account. A successful write changes the visible heart; a failed write keeps its previous state and shows an error.
 
-In account mode, hearts in search, playlists, and the player use account likes. When you are viewing Device likes, the heart destination switches to the device collection. Tooltips identify the destination.
-
-There is **no automatic upload or merging** of old device likes. A successful account write changes the visible heart; a failed write keeps its previous state and shows an error.
+Device likes was an earlier local feature and was removed from the interface in beta.8 at the owner's request. Guests can still search, play, and use recent history; they connect Google to use likes. Earlier local files are preserved, without uploading or merging their contents into account likes.
 
 Saved account playlists appear in the sidebar. Open one to browse its songs and request more pages.
 
@@ -298,34 +295,36 @@ These account-library operations are implemented and tested with controlled resp
 
 ## 9. What is saved, and where
 
-| Information                                | Where it lives                                                                        | Why                                                                           |
-| ------------------------------------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Device likes and recent listening          | `collection.json` in Vessel's application-data folder.                                | Simple local storage that survives app updates and sign-out.                  |
-| Queue and autoplay preference              | `queue.json` in the application-data folder.                                          | Restores listening context without automatically restarting audio.            |
-| Appearance choices                         | The main interface's local storage.                                                   | These are display preferences, so the interface owns them.                    |
-| Remembered sign-in                         | Keychain on macOS; a current-user-encrypted `google-session.dpapi` record on Windows. | Keeps session credentials separate from ordinary song metadata.               |
-| Account likes/playlists                    | Temporary Rust memory, refreshed from YouTube Music.                                  | Avoids confusing old local data with the connected account's current library. |
-| Short-lived playback addresses and headers | Temporary Rust memory, with expiry checks.                                            | They are private, temporary access details rather than durable music records. |
+| Information                                    | Where it lives                                                                        | Why                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Recent listening and retained older local data | `collection.json` in Vessel's application-data folder.                                | Keeps history local and avoids deleting data from earlier versions.           |
+| Queue and autoplay preference                  | `queue.json` in the application-data folder.                                          | Restores listening context without automatically restarting audio.            |
+| Appearance choices                             | The main interface's local storage.                                                   | These are display preferences, so the interface owns them.                    |
+| Remembered sign-in                             | Keychain on macOS; a current-user-encrypted `google-session.dpapi` record on Windows. | Keeps session credentials separate from ordinary song metadata.               |
+| Account likes/playlists                        | Temporary Rust memory, refreshed from YouTube Music.                                  | Avoids confusing old local data with the connected account's current library. |
+| Short-lived playback addresses and headers     | Temporary Rust memory, with expiry checks.                                            | They are private, temporary access details rather than durable music records. |
 
-Device likes are bounded to 500 tracks and recent listening to 40 tracks. The local files contain song information such as titles, artists, and artwork links, not downloaded audio.
+Recent listening is bounded to 40 tracks. Older files may contain up to 500 local favorites, retained for compatibility rather than offered as a Device likes collection. The files contain song titles, artists, and artwork links, not downloaded audio.
 
 The local file code writes a replacement safely and preserves malformed existing collection/queue data rather than silently wiping it. Local metadata is ordinary local data, not the same thing as encrypted credential storage.
 
 During authenticated extractor fallback, a private temporary cookie file may be needed for the external tool. It is removed afterward and does not become frontend state or part of a release.
 
-Sign-out forgets the stored Google session, clears the dedicated sign-in browser data, and stops playback. Device likes, recent listening, queue information, and appearance preferences remain.
+Sign-out forgets the stored Google session, clears the dedicated sign-in browser data, and stops playback. Recent listening, queue information, appearance preferences, and earlier data files remain.
 
 ## 10. Appearance and desktop features
 
 **Duskfox** is the default palette, based on the owner's preferred editor colors. Color roles are stored separately from layout rules so future themes can reuse the same interface.
 
-The glass tint ranges from 50% to 100%. At 50–69%, light glass uses dark text. At 70–100%, Duskfox's dark glass uses light text. All the main areas use the same transparency, including floating panels; the background underneath them is not painted again and made darker. At 100%, or with reduced transparency, the material is solid. This replaces the earlier extra dark patches behind text.
+Light/Dark has its own buttons in Appearance and a sun/moon shortcut in the top bar. Glass tint ranges from 50% to 100% and changes only transparency. It never switches the mode or recolors surfaces/icons. When the glass is very clear, only letters receive extra contrast. At 100%, or with reduced transparency, the chosen material becomes solid.
+
+All main areas share the same material level. Floating panels use live vector cutouts instead of loading replacement mask images, so the background stays painted while a menu opens. Appearance's contents scroll inside its fixed background. Menus close on outside clicks or Escape, and the outside control still works.
 
 Saved playlists now scroll in their own sidebar area. The main navigation and Appearance/Account controls stay in place, even with a long playlist list.
 
 On supported macOS versions, the window uses Apple's native clear-glass effect, with a fallback on older systems. This is separate from CSS styling inside the page. Windows shares the interface and preferences but does not gain Apple's native glass effect.
 
-Small panel-opening animations respect reduced-motion settings. Artwork is loaded from provider image addresses, with a fallback if an optional larger image fails.
+Panels now open with a short, proportional scale and content fade. The old stretched genie is gone; the background keeps its alpha during the reveal. Reduced motion opens panels immediately. Artwork is loaded from provider image addresses, with a fallback if an optional larger image fails.
 
 Operating-system media controls call the same Rust play/pause/previous/next operations as the onscreen buttons. macOS uses Now Playing; Windows uses System Media Transport Controls.
 
@@ -386,12 +385,12 @@ We use different tests for different questions. One type cannot stand in for all
 | Live guest tests                | Real provider search, browsing, source resolution, and native decoding work in the tested run.                                        | Premium behavior, every region/song, or subjective sound quality.                  |
 | Native/package tests            | Real windows, protected storage fixtures, installed dependencies, package integrity, and launch/quit work in the checked environment. | Every OS version, real media-key delivery, or physical speaker/headphone behavior. |
 
-For beta.7, the recorded checks include:
+For beta.8, the recorded checks include:
 
-- **35 WebKit interface tests and 11 focused Chromium tests.** The shared material and text contrast are checked over bright, dark, and patterned backgrounds; the sidebar check uses 80 playlists and real wheel scrolling.
+- **52 WebKit interface tests and 28 focused Chromium tests.** Both explicit modes are checked over bright/dark/patterned backgrounds at six tint values. Tests also cover proportional reveals, outside clicks, delayed-mask flashes, player edges, Appearance scrolling, account-only likes, and the 80-playlist sidebar.
 - **44 ordinary Rust library tests on macOS** and **46 on Windows**, plus the command-origin and non-network integration checks.
 - Successful frontend checks/builds, Rust formatting, and Clippy checks.
-- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.7 native-window check loaded three live Home shelves.
+- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.8 native-window check loaded three live Home shelves.
 - macOS ZIP/DMG integrity, 107 signatures, and an eight-second extracted-app launch followed by normal quit.
 - Windows native WebView2, Rust command calls, media-control availability, installed-runtime decoding/volume, install, normal launch/quit, and uninstall.
 
@@ -442,7 +441,7 @@ The installed app includes the tools it needs. **The listener does not install P
 
 GitHub Actions builds and checks Windows on a real Windows runner. macOS builds and native checks have been run on the available Apple Silicon host. That is different from proving support on every declared minimum operating-system version.
 
-The [beta.7 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.7) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
+The [beta.8 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.8) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
 
 The repository contains the app source and build instructions. Large downloaded tools, built apps, caches, and test artifacts are generated separately and kept out of source commits.
 
@@ -452,7 +451,7 @@ Vessel is private/proprietary, but the bundled tools retain their own licenses. 
 
 ### Implemented in the current beta
 
-The shared desktop interface, guest search/playback, source quality selection, real recommendations, radio, editable saved queue, device likes/history, account connection and protected remembering, account-library code, native media controls, appearance options, and both platform packages are implemented.
+The shared desktop interface, guest search/playback, source quality selection, real recommendations, radio, editable saved queue, local history, account likes/playlists, protected account remembering, media controls, independent appearance controls, and both platform packages are implemented.
 
 “Implemented” and “live-verified” are different. Account-library code has controlled request/UI coverage; it still needs real-account verification. Native media-control registration has been checked; physical media keys still need hands-on checking.
 
@@ -482,11 +481,13 @@ Ideas such as saved listening spaces and sharing small listening collections are
 | Finding a playable source                | `provider.rs` and `direct.rs`                                                          |
 | Audio playback and volume                | `playback.rs`, `mpv.rs`, and `native/patches/`                                         |
 | Queue order and radio                    | `queue.rs` and `radio.rs`                                                              |
-| Device likes and history                 | `library.rs`                                                                           |
+| Recent history and older local data      | `library.rs`                                                                           |
 | Sign-in and account protection           | `account.rs`, `sign_in.rs`, and `account/windows_vault.rs`                             |
 | Account likes and playlists              | `account_library.rs` and its tests                                                     |
 | Appearance and readable glass            | `src/lib/appearance.ts`, `src/lib/material.ts`, `src/lib/themes/`, and the CSS files   |
 | Building and packaging                   | `scripts/`, the native dependency manifests, and `.github/workflows/windows-build.yml` |
+
+Menu closing is handled in `src/lib/popover.ts`; proportional opening is in `src/lib/motion.ts`.
 
 For the complete file tree, read the [project map](project-map.md). For the detailed design, read [architecture](architecture.md). For why the product took this direction, read [decisions](decisions.md). For test evidence and limitations, read [verification](verification.md). For installing the current beta, read [beta notes](beta-release.md).
 

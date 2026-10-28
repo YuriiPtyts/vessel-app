@@ -13,7 +13,7 @@ npm run package:windows
 
 `native-dependencies.windows.json` pins the exact Windows LGPL libmpv, yt-dlp, and Deno downloads and their SHA-256 hashes. Preparation verifies Windows x64 PE headers, the GPL-disabled libmpv configuration, and absence of explicit GPL/nonfree FFmpeg enable flags. The selected upstream LGPL build's provenance is recorded; this is not a complete independent transitive-license audit.
 
-The output is `.cache/releases/v0.1.0-beta.7/Vessel-0.1.0-beta.7-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
+The output is `.cache/releases/v0.1.0-beta.8/Vessel-0.1.0-beta.8-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
 
 ## Platform behavior
 
@@ -46,3 +46,7 @@ The downloaded installer is **85,032,286 bytes**, and its SHA-256 matches `SHA25
 ### Beta.7 sidebar and shared material update
 
 [Native Windows CI run 40696357557](https://github.com/YuriiPtyts/vessel-app/actions/runs/40696357557), from `aa6c7f8`, passes frontend/Rust checks, 46 library tests, actual WebView2/native commands/media-control availability, and the production installer/runtime/launch/quit/uninstall checks. The downloaded installer is **85,137,065 bytes** and matches its SHA-256 sidecar. Eleven focused Chromium fixture tests also check the shared sidebar/material/contrast behavior; these ran on the macOS development host, separately from the native Windows installer checks.
+
+### Beta.8 independent appearance and stable menus
+
+[Native Windows CI run 40735439125](https://github.com/YuriiPtyts/vessel-app/actions/runs/40735439125), from `23c33e0`, passes frontend/Rust checks, 46 library tests, actual WebView2/native IPC/SMTC, production install, installed-runtime decoding/volume, normal launch/quit, and uninstall. The downloaded setup is **85,117,159 bytes** and matches its SHA-256 sidecar. The 28 focused Chromium fixture tests ran on the macOS development host and are separate from native Windows pixel/compositor testing.
