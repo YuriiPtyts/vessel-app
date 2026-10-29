@@ -568,8 +568,14 @@ fn main() {
             && std::env::var_os("VESSEL_WINDOWS_SMOKE_REPORT").is_some();
         let provider_probe = cfg!(feature = "native-diagnostics")
             && std::env::var_os("VESSEL_PROVIDER_DIAGNOSTICS").is_some();
-        let isolated_services =
-            remember_probe || sign_in_probe || media_probe || windows_smoke || provider_probe;
+        let soundcloud_login_probe = cfg!(feature = "native-diagnostics")
+            && std::env::var_os("VESSEL_SOUNDCLOUD_LOGIN_DIAGNOSTICS").is_some();
+        let isolated_services = remember_probe
+            || sign_in_probe
+            || media_probe
+            || windows_smoke
+            || provider_probe
+            || soundcloud_login_probe;
         let library = Arc::new(if isolated_services {
             LocalLibrary::memory()
         } else {
@@ -694,6 +700,24 @@ fn main() {
                     let _ = std::fs::write(
                         path,
                         serde_json::to_vec_pretty(&result).unwrap_or_default(),
+                    );
+                }
+                handle.exit(if passed { 0 } else { 1 });
+            });
+        }
+        #[cfg(feature = "native-diagnostics")]
+        if soundcloud_login_probe {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let report = vessel_app::soundcloud::sign_in::render_smoke(handle.clone())
+                    .await
+                    .unwrap_or_else(|error| serde_json::json!({"passed":false,"error":error.code}));
+                let passed =
+                    report.get("passed").and_then(serde_json::Value::as_bool) == Some(true);
+                if let Some(path) = std::env::var_os("VESSEL_SOUNDCLOUD_LOGIN_DIAGNOSTICS") {
+                    let _ = std::fs::write(
+                        path,
+                        serde_json::to_vec_pretty(&report).unwrap_or_default(),
                     );
                 }
                 handle.exit(if passed { 0 } else { 1 });

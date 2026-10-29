@@ -47,6 +47,22 @@ node scripts/check-native-providers.mjs "$TMPDIR/vessel-providers.json"
 cargo test --manifest-path src-tauri/Cargo.toml --lib live_soundcloud_guest_search_and_native_playback -- --ignored --nocapture
 ```
 
-**Real SoundCloud password/2FA/federated-login acceptance, remembered real-session recovery, account likes/playlists/writes, Go+ access, and cross-app reconciliation still need owner verification.** Check that both accounts stay connected after switching/restarting and that signing out of one leaves the other intact. Automated native checks use isolated profiles and dummy cookies, never real credentials. See [verification](verification.md) for actual results.
+**The owner reported successful SoundCloud login on 2026-10-29.** The earlier white-window report concerned the step after submitting login details, not the initial form. The local handoff trace ended as cancelled before a session candidate was captured, so it does not establish a root cause or an automated successful account handoff. No navigation allowlist change is attributed as the fix.
+
+Remembered real-session recovery, the full password/2FA/federated-login matrix, account likes/playlists/writes, Go+ access, and cross-app reconciliation retain owner-verification scope. Check that both accounts stay connected after switching/restarting and that signing out of one leaves the other intact. See [verification](verification.md) for actual results.
+
+### Optional native login diagnostics (beta.13)
+
+Build with `native-diagnostics` and supply a report path to use a **dedicated diagnostic browser store and in-memory application/vault state**. Normal production builds do not install these observers. The automated rendering check uses the production sign-in controller and real SoundCloud page, dismisses consent only in its fresh fixture, and requires hit-tested, ready authentication fields that remain visible after three seconds. It clears its own browser store before and after the check and never marks page rendering as Connected:
+
+```sh
+npm run tauri -- build --no-bundle --features native-diagnostics
+VESSEL_SOUNDCLOUD_LOGIN_DIAGNOSTICS="$TMPDIR/vessel-soundcloud-login.json" VESSEL_RUNTIME_DIR="$PWD/src-tauri/runtime" src-tauri/target/release/Vessel
+node scripts/check-native-soundcloud-login.mjs "$TMPDIR/vessel-soundcloud-login.json"
+```
+
+For a post-submit problem, add `VESSEL_SOUNDCLOUD_LOGIN_INTERACTIVE=1` to the same invocation, then repeat the login in **SoundCloud sign-in diagnostic · Vessel**. The report is updated atomically with bounded navigation origins, fixed page classifications, connection stages, and error codes. This mode does not inject a field observer, dismiss consent, record values/page text, or capture screenshots. It closes after completion/cancellation or ten minutes and clears its temporary browser store on normal completion. A diagnostic connection is temporary; it is not saved into the normal app's protected session.
+
+The report checker handles both modes. A successful interactive report requires Connected, an activated verified session, unchanged fixture YouTube state, and cleared diagnostic browser data. A cancelled attempt does not pass. The live-page rendering check depends on provider/network availability and is separate from both credential acceptance and the native dummy-cookie store-isolation check above. Windows uses a separate diagnostic WebView2 directory; live form rendering has been exercised on macOS, not certified on Windows.
 
 SoundCloud and YouTube Music marks use [Simple Icons](https://simpleicons.org/) paths (CC0); the brands remain their owners' trademarks. No Simple Icons runtime dependency is added.

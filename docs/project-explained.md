@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It follows the project through **Vessel 0.1.0-beta.12** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.13** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -284,6 +284,8 @@ Google sign-in opens Google's own page in an isolated native window. Vessel does
 
 SoundCloud has its own isolated window, browser-data namespace, verification, and protected vault record. Both logins can coexist. Switch the provider, open Account, and connect that service; signing out affects that service only. The header shows connected indicators for both. SoundCloud account verification uses its own service response, and no arbitrary browser cookie marks it Connected.
 
+The owner reports successful SoundCloud login. Beta.13 adds optional native diagnostics that distinguish a visible form from a verified post-submit handoff. Their temporary browser and in-memory vault are separate from normal listening, and reports exclude credentials, cookie values, full callback URLs, and screenshots. This is diagnostic coverage, with no claimed root-cause fix for the earlier white-window report. See [the diagnostic commands and scope](soundcloud.md#optional-native-login-diagnostics-beta13).
+
 Rust reads the browser session after the sign-in flow reaches a trusted YouTube completion page and asks YouTube Music to verify the account. It checks cookies available to Music first, allows the YouTube consent redirect, and retries incomplete verification briefly. A 45-second verification limit prevents a pending handoff from waiting indefinitely. Loading a page or finding an arbitrary cookie is not enough to display Connected; saving a verified session remains a separate protected step.
 
 Remembered sessions use:
@@ -504,7 +506,7 @@ The shared desktop interface, guest search/playback, source quality selection, r
 - Full album/artist browsing, gapless playback, and an updater.
 - Trusted macOS/Windows distribution signing and remaining public-release dependency materials.
 - More complete themes; Duskfox is the only complete palette shipped now.
-- Real SoundCloud credential/2FA/federated-login, remembered-session recovery, account-library/write, and Go+ checks; those operations have controlled coverage rather than owner-account acceptance yet.
+- The owner has reported successful SoundCloud login; broader 2FA/federated-login, remembered-session recovery, account-library/write, and Go+ checks remain. The cancelled local handoff trace is not an automated successful credential check.
 - Linux and Intel Mac support, which are not validated release targets.
 
 Ideas such as saved listening spaces and sharing small listening collections are separate experiments. They are not hidden features already present in this beta. See the [opportunity list](opportunities.md).

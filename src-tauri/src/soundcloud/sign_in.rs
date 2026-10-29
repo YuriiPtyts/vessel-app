@@ -32,12 +32,16 @@ fn browser<'a>(
     let builder = WebviewWindowBuilder::new(handle, label, url);
     #[cfg(target_os = "macos")]
     if crate::sign_in::persistent_browser_available() {
+        let render_probe = cfg!(feature = "native-diagnostics")
+            && std::env::var_os("VESSEL_SOUNDCLOUD_LOGIN_DIAGNOSTICS").is_some();
         let diagnostic = cfg!(feature = "native-diagnostics")
             && (std::env::var_os("VESSEL_PROVIDER_DIAGNOSTICS").is_some()
                 || std::env::var_os("VESSEL_WINDOWS_SMOKE_REPORT").is_some());
         return builder
             .incognito(false)
-            .data_store_identifier(if diagnostic {
+            .data_store_identifier(if render_probe {
+                0xc37edb746c3b4b929ca4d193166c5865_u128.to_be_bytes()
+            } else if diagnostic {
                 0xc37edb746c3b4b929ca4d193166c5862_u128.to_be_bytes()
             } else {
                 PROFILE
@@ -47,6 +51,10 @@ fn browser<'a>(
     let builder = if let Ok(path) = handle.path().app_data_dir() {
         builder.data_directory(path.join(
             if cfg!(feature = "native-diagnostics")
+                && std::env::var_os("VESSEL_SOUNDCLOUD_LOGIN_DIAGNOSTICS").is_some()
+            {
+                "soundcloud-login-render-diagnostics"
+            } else if cfg!(feature = "native-diagnostics")
                 && std::env::var_os("VESSEL_WINDOWS_SMOKE_REPORT").is_some()
             {
                 "soundcloud-browser-diagnostics"
@@ -135,7 +143,7 @@ impl SoundCloudSignIn {
             id,
             closed: closed.clone(),
         });
-        let window = browser(
+        let builder = browser(
             &handle,
             LABEL,
             WebviewUrl::External("about:blank".parse().unwrap()),
@@ -151,8 +159,14 @@ impl SoundCloudSignIn {
             } else {
                 tauri::webview::NewWindowResponse::Deny
             }
-        })
-        .build();
+        });
+        #[cfg(feature = "native-diagnostics")]
+        let builder = if std::env::var_os("VESSEL_SOUNDCLOUD_LOGIN_DIAGNOSTICS").is_some() {
+            login_render::instrument(builder)
+        } else {
+            builder
+        };
+        let window = builder.build();
         let window = match window {
             Ok(window) => window,
             Err(_) => {
@@ -161,6 +175,8 @@ impl SoundCloudSignIn {
                 return Err(login_error());
             }
         };
+        #[cfg(feature = "native-diagnostics")]
+        login_render::phase("browserOpened", None);
         window.on_window_event(move |event| {
             if matches!(event, WindowEvent::Destroyed) {
                 closed.send_replace(());
@@ -205,15 +221,27 @@ impl SoundCloudSignIn {
                     .map_err(|_| login_error())?
                     .map_err(|_| login_error())??;
                     if let Some((token, cookies)) = candidate {
+                        #[cfg(feature = "native-diagnostics")]
+                        login_render::phase("sessionCandidateCaptured", None);
                         let start = *verification_start.get_or_insert_with(Instant::now);
                         let remaining = Duration::from_secs(60)
                             .checked_sub(start.elapsed())
                             .ok_or_else(login_error)?;
                         let _ = window.set_title("Finishing SoundCloud connection · Vessel");
-                        if let Ok(Ok(session)) =
-                            tokio::time::timeout(remaining, cloud.verify(&token, cookies)).await
-                        {
+                        let verified =
+                            tokio::time::timeout(remaining, cloud.verify(&token, cookies)).await;
+                        #[cfg(feature = "native-diagnostics")]
+                        match &verified {
+                            Ok(Ok(_)) => login_render::phase("sessionVerified", None),
+                            Ok(Err(error)) => {
+                                login_render::phase("sessionVerificationFailed", Some(error.code))
+                            }
+                            Err(_) => login_render::phase("sessionVerificationTimedOut", None),
+                        }
+                        if let Ok(Ok(session)) = verified {
                             cloud.auth.activate(id, session, true).await?;
+                            #[cfg(feature = "native-diagnostics")]
+                            login_render::phase("sessionActivated", None);
                             return Ok::<_, AppError>(());
                         }
                         if start.elapsed() >= Duration::from_secs(60) {
@@ -224,6 +252,10 @@ impl SoundCloudSignIn {
                 }
             };
             let result = tokio::select! {result=work=>result,_=receiver.changed()=>Err(AppError::cancelled()),_=tokio::time::sleep(Duration::from_secs(900))=>Err(login_error())};
+            #[cfg(feature = "native-diagnostics")]
+            if let Err(error) = &result {
+                login_render::phase("attemptEnded", Some(error.code));
+            }
             if let Err(error) = result
                 && error.code != "cancelled"
             {
@@ -302,6 +334,11 @@ fn login_error() -> AppError {
 mod native_probe;
 #[cfg(feature = "native-diagnostics")]
 pub use native_probe::isolation_smoke;
+#[cfg(feature = "native-diagnostics")]
+#[path = "login_render.rs"]
+mod login_render;
+#[cfg(feature = "native-diagnostics")]
+pub use login_render::render_smoke;
 
 #[cfg(test)]
 mod tests {

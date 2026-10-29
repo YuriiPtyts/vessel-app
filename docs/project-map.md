@@ -148,3 +148,5 @@ The common build step applies to both platforms. Packaging and actual verificati
 ## Future work
 
 **SoundCloud is implemented in beta.12.** `src-tauri/src/services.rs` owns the selected provider and independent application contexts; `src-tauri/src/soundcloud/` owns its catalog, streams, protected account, and isolated sign-in. `ProviderSwitch.svelte` and `providers.css` place the single animated control at the whole-window centre. Existing YouTube storage is retained; SoundCloud has its own queue/history/vault/browser namespaces. See [SoundCloud behavior and verification scope](soundcloud.md) and [owner-directed milestones](opportunities.md#owner-directed-future-milestones). Product decisions and longer-term plans remain in [decisions](decisions.md) and [feasibility](feasibility.md).
+
+Beta.13 adds `soundcloud/login_render.rs` / `login_render.js` and `scripts/check-native-soundcloud-login.mjs` for opt-in native rendering and post-submit traces. They use the production sign-in controller with separate diagnostic browser data and in-memory application/vault state; see [diagnostic modes and report scope](soundcloud.md#optional-native-login-diagnostics-beta13).

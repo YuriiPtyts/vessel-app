@@ -14,4 +14,4 @@ These are utility/retention/sharing hypotheses, not claims of novelty or guarant
 
 **Additional themes:** ship a curated theme library/picker on the semantic palette tokens, keep Duskfox as the default, and preserve independent interface preferences. Scope and completion signals are recorded in [themes.md](themes.md).
 
-- [x] **SoundCloud support:** implemented in beta.12 with an animated provider switch and independent accounts. Real-account acceptance/recovery and account writes retain owner-verification scope; see [SoundCloud mode](soundcloud.md).
+- [x] **SoundCloud support:** implemented in beta.12 with an animated provider switch and independent accounts. The owner reports successful login; full login-method coverage, recovery, and account writes retain owner-verification scope. Beta.13 adds opt-in native login diagnostics; see [SoundCloud mode](soundcloud.md).
