@@ -439,6 +439,8 @@ For beta.12, the recorded checks include:
 
 Beta.13 reruns all **65 production WebKit checks**, ordinary Rust checks, and native provider isolation; adds **three diagnostic privacy/visibility tests** on macOS and Windows; and verifies the live macOS authentication form through the production controller. The owner reports successful SoundCloud login, while the local interactive trace ended as cancelled and is not counted as automated credential acceptance. [Windows CI 40898667606](https://github.com/YuriiPtyts/vessel-app/actions/runs/40898667606) passes native and installer/runtime checks. The final macOS packages again pass 107 signatures, ZIP/DMG checks, and normal extracted-app launch/quit.
 
+Beta.14 again passes **65 WebKit checks**, **73 macOS / 75 Windows ordinary library tests**, three ordinary binary tests, and targeted diagnostics. Regressions cover a disappearing cookie candidate, remembered-authentication changes, slow/failing library sections, stale sign-out results, and build-specific material selection. A public SoundCloud read fetched 871 like rows (805 playable tracks) and 157 playlists without credentials. [Windows CI 40961383780](https://github.com/YuriiPtyts/vessel-app/actions/runs/40961383780) passes native and installer/runtime checks on build 26100. The optional macOS SoundCloud form probe showed the form but failed its final fixture cleanup, so its full check is not counted as passing. The owner's Windows 10 dragging and actual account flows still need a beta.14 retest; see [the detailed verification log](verification.md).
+
 Some native/network tests run only when explicitly requested, so ordinary test totals do not include every experiment. Muted or silent-output decoding tests are not listening tests. The [verification log](verification.md) keeps those distinctions and the measured results.
 
 ## 13. How the app is built and delivered
@@ -486,7 +488,7 @@ The installed app includes the tools it needs. **The listener does not install P
 
 GitHub Actions builds and checks Windows on a real Windows runner. macOS builds and native checks have been run on the available Apple Silicon host. That is different from proving support on every declared minimum operating-system version.
 
-The [beta.13 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.13) has a roughly **76 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
+The [beta.14 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.14) has a roughly **76 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
 
 The repository contains the app source and build instructions. Large downloaded tools, built apps, caches, and test artifacts are generated separately and kept out of source commits.
 

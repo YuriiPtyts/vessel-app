@@ -38,6 +38,8 @@ Native YouTube candidates can now be checked while Google remains visible, with 
 
 SoundCloud publishes each fully fetched library section as soon as it completes, so a slow playlist request does not withhold ready likes (and vice versa). Failed sections retain their previous good data and show a redacted HTTP status when available. Late results cannot repopulate a forgotten account. These fixes have transport/behavior regressions; successful live Windows account acceptance/sync still needs the owner's beta.14 retest.
 
+[Windows CI 40961383780](https://github.com/YuriiPtyts/vessel-app/actions/runs/40961383780), built from `3046d78`, passes the strengthened native/installer checks, 75 ordinary library tests, three ordinary binary tests, three diagnostic library tests, and five feature-enabled binary tests. Its **Server 2025 / build 26100** main window uses modern Acrylic with actual DWM type 3; the native handoff uses real scoped cookies with a substituted Google origin/provider acknowledgement. The **85,387,666-byte** installer matches its SHA-256 sidecar. This is not a Windows 10 physical drag or real-account acceptance measurement. The checked installer is attached to the private [beta.14 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.14).
+
 The null-output decode check does not certify WASAPI on physical speakers, audible volume latency, media-key delivery, real Google credentials, or personalized/Premium playback. Those require owner testing on Windows hardware. See [verification](verification.md) for actual run results and [native dependencies](native-dependencies.md) for provenance and distribution scope.
 
 ### Verified beta.3 build
