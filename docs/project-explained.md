@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It follows the project through **Vessel 0.1.0-beta.11** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.12** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -24,16 +24,18 @@ It follows the project through **Vessel 0.1.0-beta.11** on **October 29, 2026**.
 
 ## 1. What Vessel is
 
-Vessel is a desktop music app for **Apple Silicon Macs and Windows x64 computers**. It uses YouTube Music for song information, recommendations, and playable sources. The repository and beta downloads are private.
+Vessel is a desktop music app for **Apple Silicon Macs and Windows x64 computers**. It uses YouTube Music or SoundCloud for song information, recommendations, and playable sources. The repository and beta downloads are private.
 
 The goal is simple: open the app, find music, and listen without managing links or installing extra playback tools.
 
 You can:
 
+- Switch services using one sliding button at the exact horizontal centre of the window, beside search.
+- Stay signed into YouTube Music and SoundCloud at the same time, with separate queues and histories.
 - Search for songs and music videos, then play their audio.
 - Browse recommendations supplied by YouTube Music.
 - Open recommended albums/playlists and saved account playlists.
-- Create playlists in YouTube Music and add songs to your own playlists.
+- Create playlists in the selected account and add songs to your own playlists.
 - Open available song lyrics in a scrollable window while listening.
 - Pause, seek, change volume, and choose from the audio formats actually available.
 - Keep a queue, play related songs automatically, and use operating-system media controls.
@@ -75,6 +77,8 @@ Beta.10 adds account playlist creation and song additions, with Private as the d
 
 Beta.11 removes the dark text contour, shadow halo, and extra low-tint bolding. It uses Apple's native Regular Liquid Glass to support clean labels and hides sharp lower content beneath floating surfaces so overlapping text does not compete.
 
+Beta.12 adds SoundCloud and a centred sliding provider switch. Rust owns the selected service and routes requests to its separate account/catalog/player context. Switching pauses the outgoing service while retaining its position and queue. SoundCloud has its own sign-in browser and protected session; it does not replace or log out the Google account. See [SoundCloud mode](soundcloud.md).
+
 ## 3. The basic structure
 
 The app has two main parts and a separate audio engine:
@@ -88,7 +92,7 @@ Svelte + TypeScript + HTML/CSS
 The part that runs the music and account work
 Rust
           |
-          +-- Requests music information from YouTube Music
+          +-- Requests music information from the selected service
           +-- Finds a playable source, with yt-dlp as a fallback
           +-- Manages accounts, likes, and the queue
           |
@@ -101,7 +105,7 @@ libmpv -> macOS or Windows audio system -> your output device
 
 The interface asks Rust to do things such as “play this song” or “set the volume.” Rust sends back information such as the current track, position, queue, and account status.
 
-A few terms used below: the **provider** is YouTube Music; a **source** is the temporary internet address used to read a song's audio; a **cache** is a small temporary store that avoids repeating work. **Native** means using the operating system's own features, such as audio output or media controls.
+A few terms used below: the **provider** is the selected service, YouTube Music or SoundCloud; a **source** is the temporary internet address used to read a song's audio; a **cache** is a small temporary store that avoids repeating work. **Native** means using the operating system's own features, such as audio output or media controls.
 
 We keep playback in Rust so it does not depend on a visible page or a JavaScript timer. Hiding the window does not hand responsibility for the next song back to the interface. Quitting the app still stops its playback.
 
@@ -195,6 +199,8 @@ The app disables video playback and does not ask libmpv to run its own source ex
 
 Rust requests song information and recommendations from YouTube Music. These requests use the provider's internal service rather than a stable, official public interface for third-party developers.
 
+SoundCloud uses a separate Rust website-compatibility client. It finds the public browser client identifier, reads actual discovery/search/playlist responses, and resolves returned audio transcodings for libmpv. This beta does not ship an application secret or claim to be a registered official SoundCloud OAuth app. Both website integrations can change when their providers change.
+
 **Why it helps:** search, Home shelves, radio, and account collections can use real provider data. A fast guest source lookup also avoids starting another program when the response is usable.
 
 **What we give up:** provider responses and playback rules can change. Available songs and formats can differ by account, region, and time.
@@ -228,6 +234,8 @@ The direct package lists are in [package.json](../package.json) and [Cargo.toml]
 ## 6. What happens when you play a song
 
 Here is the complete path from clicking a result to hearing audio:
+
+The selected service determines which Rust account, catalog, resolver, history, and queue handle the request. The YouTube path below retains its direct lookup/extractor fallback. SoundCloud obtains its returned transcodings through its own Rust client; both paths use the same native audio-engine code. Only the selected service can start playback.
 
 1. **You choose a track.** The interface sends its song ID and, for a collection, the displayed song order.
 2. **Tauri checks the caller.** Only the trusted main app page can use the app commands. The Google sign-in window cannot control playback through those commands.
@@ -274,6 +282,8 @@ To prevent old work replacing new work, requests carry numbers tied to the curre
 
 Google sign-in opens Google's own page in an isolated native window. Vessel does not provide its own password form.
 
+SoundCloud has its own isolated window, browser-data namespace, verification, and protected vault record. Both logins can coexist. Switch the provider, open Account, and connect that service; signing out affects that service only. The header shows connected indicators for both. SoundCloud account verification uses its own service response, and no arbitrary browser cookie marks it Connected.
+
 Rust reads the browser session after the sign-in flow reaches a trusted YouTube completion page and asks YouTube Music to verify the account. It checks cookies available to Music first, allows the YouTube consent redirect, and retries incomplete verification briefly. A 45-second verification limit prevents a pending handoff from waiting indefinitely. Loading a page or finding an arbitrary cookie is not enough to display Connected; saving a verified session remains a separate protected step.
 
 Remembered sessions use:
@@ -312,6 +322,9 @@ These account-library operations are implemented and tested with controlled resp
 | Recent listening and retained older local data | `collection.json` in Vessel's application-data folder.                                | Keeps history local and avoids deleting data from earlier versions.           |
 | Queue and autoplay preference                  | `queue.json` in the application-data folder.                                          | Restores listening context without automatically restarting audio.            |
 | Appearance choices                             | The main interface's local storage.                                                   | These are display preferences, so the interface owns them.                    |
+| Selected service                               | Rust-owned `music-service.json` in the application-data folder.                         | Routing is provider state rather than an appearance preference.              |
+| SoundCloud history and queue                    | Separate `soundcloud-collection.json` and `soundcloud-queue.json` files.                 | Preserves the existing YouTube files and keeps the two listening contexts apart. |
+| Remembered SoundCloud sign-in                   | Its own Keychain entry or `soundcloud-session.dpapi` record.                            | Connecting/forgetting SoundCloud does not replace Google's session.          |
 | Remembered sign-in                             | Keychain on macOS; a current-user-encrypted `google-session.dpapi` record on Windows. | Keeps session credentials separate from ordinary song metadata.               |
 | Account likes/playlists                        | Temporary Rust memory, refreshed from YouTube Music.                                  | Avoids confusing old local data with the connected account's current library. |
 | Short-lived playback addresses and headers     | Temporary Rust memory, with expiry checks.                                            | They are private, temporary access details rather than durable music records. |
@@ -322,7 +335,7 @@ The local file code writes a replacement safely and preserves malformed existing
 
 During authenticated extractor fallback, a private temporary cookie file may be needed for the external tool. It is removed afterward and does not become frontend state or part of a release.
 
-Sign-out forgets the stored Google session, clears the dedicated sign-in browser data, and stops playback. Recent listening, queue information, appearance preferences, and earlier data files remain.
+Sign-out forgets the selected service's stored session, clears that service's sign-in browser data, and stops its playback. The other service remains connected. Recent listening, queue information, appearance preferences, and earlier data files remain.
 
 ## 10. Appearance and desktop features
 
@@ -409,13 +422,14 @@ We use different tests for different questions. One type cannot stand in for all
 | Live guest tests                | Real provider search, browsing, source resolution, and native decoding work in the tested run.                                        | Premium behavior, every region/song, or subjective sound quality.                  |
 | Native/package tests            | Real windows, protected storage fixtures, installed dependencies, package integrity, and launch/quit work in the checked environment. | Every OS version, real media-key delivery, or physical speaker/headphone behavior. |
 
-For beta.11, the recorded checks include:
+For beta.12, the recorded checks include:
 
-- **59 WebKit interface tests and 35 focused Chromium tests.** Both explicit modes are checked over bright/dark/patterned backgrounds at six tint values. Tests also cover proportional reveals, outside clicks, delayed-mask flashes, player edges, Appearance scrolling, account-only likes, the 80-playlist sidebar, playlist writes, and lyrics dialogs.
+- **65 WebKit interface tests and 41 focused Chromium tests.** Both explicit modes are checked over bright/dark/patterned backgrounds at six tint values. Tests cover the existing player/glass/library features plus exact provider centring, slide animation, separate queues/history, simultaneous account state, scoped sign-out, and late response/event rejection.
 - Typography checks require no text shadow/stroke and stable dark weights/fills between 85% and 50%. Browser contrast fixtures include an explicit controlled material backing, which is not a measurement of the OS compositor. The real Mac diagnostic separately confirms Regular glass and clean WebView text styles.
-- **57 ordinary Rust library tests on macOS** and **59 on Windows**, plus two binary tests and the non-network integration check. New coverage includes authenticated playlist creation/addition, owned/read-only destinations, rejected writes, stale accounts, empty playlists, and lyrics parsing/cache boundaries.
+- **67 ordinary Rust library tests on macOS** and **69 on Windows**, plus two binary tests and the non-network integration check. New SoundCloud coverage includes request/token scope, restricted-format rejection, safe playlist replacement, separate vaults, cancellation rollback, and saved service choice.
 - Successful frontend checks/builds, Rust formatting, and Clippy checks.
-- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.11 native-window check loaded three live Home shelves; the beta.10 live guest lyrics lookup returned 45 lines with source credit in the observed run.
+- Beta.12 live SoundCloud checks loaded three discovery shelves, a 49-playable-track collection, 25 search results, 49 related tracks, and two formats; muted native decoded output advanced in 3.136 seconds in the observed run. A YouTube regression reached decoded output in 3.387 seconds, or 0.880 seconds for its cached repeat. Earlier lyrics/provider measurements remain version-labelled in the log.
+- A real native dummy-cookie check verifies separate Google/SoundCloud browser stores, SoundCloud cookie access, unchanged accounts, and clean closure without creating an unverified connection.
 - macOS ZIP/DMG integrity, 107 signatures, and an eight-second extracted-app launch followed by normal quit.
 - Windows native WebView2 transparency and Acrylic removal/reapply, Rust command calls, media-control availability, installed-runtime decoding/volume, install, normal launch/quit, and uninstall. A native private-browser dummy-cookie check also captures the session and closes the handoff without falsely connecting an account.
 
@@ -466,7 +480,7 @@ The installed app includes the tools it needs. **The listener does not install P
 
 GitHub Actions builds and checks Windows on a real Windows runner. macOS builds and native checks have been run on the available Apple Silicon host. That is different from proving support on every declared minimum operating-system version.
 
-The [beta.11 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.11) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
+The [beta.12 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.12) has a roughly **76 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
 
 The repository contains the app source and build instructions. Large downloaded tools, built apps, caches, and test artifacts are generated separately and kept out of source commits.
 
@@ -490,7 +504,7 @@ The shared desktop interface, guest search/playback, source quality selection, r
 - Full album/artist browsing, gapless playback, and an updater.
 - Trusted macOS/Windows distribution signing and remaining public-release dependency materials.
 - More complete themes; Duskfox is the only complete palette shipped now.
-- SoundCloud support, which is on the backlog but is not implemented.
+- Real SoundCloud credential/2FA/federated-login, remembered-session recovery, account-library/write, and Go+ checks; those operations have controlled coverage rather than owner-account acceptance yet.
 - Linux and Intel Mac support, which are not validated release targets.
 
 Ideas such as saved listening spaces and sharing small listening collections are separate experiments. They are not hidden features already present in this beta. See the [opportunity list](opportunities.md).
@@ -511,6 +525,7 @@ Ideas such as saved listening spaces and sharing small listening collections are
 | Account likes and playlists              | `account_library.rs` and its tests                                                     |
 | Creating playlists and adding songs      | `playlist_writes.rs` and `src/lib/components/PlaylistDialog.svelte`                     |
 | Lyrics lookup and its window             | `lyrics.rs`, `catalog.rs`, and `src/lib/components/LyricsWindow.svelte`                  |
+| Provider mode and independent contexts   | `services.rs`, `soundcloud/`, and `src/lib/components/ProviderSwitch.svelte`              |
 | Appearance and readable glass            | `src/lib/appearance.ts`, `src/lib/material.ts`, `src/lib/themes/`, and the CSS files   |
 | Building and packaging                   | `scripts/`, the native dependency manifests, and `.github/workflows/windows-build.yml` |
 
@@ -518,4 +533,4 @@ Menu closing is handled in `src/lib/popover.ts`; proportional opening is in `src
 
 For the complete file tree, read the [project map](project-map.md). For the detailed design, read [architecture](architecture.md). For why the product took this direction, read [decisions](decisions.md). For test evidence and limitations, read [verification](verification.md). For installing the current beta, read [beta notes](beta-release.md).
 
-**In one sentence:** Vessel uses a shared Svelte interface to control a Rust music app, which gets music from YouTube Music and plays it through libmpv, with local data and platform-specific desktop features around it.
+**In one sentence:** Vessel uses a shared Svelte interface to control a Rust music app, which gets music from YouTube Music or SoundCloud and plays it through libmpv, with separate accounts/listening contexts and platform-specific desktop features around it.

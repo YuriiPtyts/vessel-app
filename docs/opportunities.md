@@ -14,4 +14,4 @@ These are utility/retention/sharing hypotheses, not claims of novelty or guarant
 
 **Additional themes:** ship a curated theme library/picker on the semantic palette tokens, keep Duskfox as the default, and preserve independent interface preferences. Scope and completion signals are recorded in [themes.md](themes.md).
 
-- [ ] **SoundCloud support:** add SoundCloud as an additional music provider in a future milestone.
+- [x] **SoundCloud support:** implemented in beta.12 with an animated provider switch and independent accounts. Real-account acceptance/recovery and account writes retain owner-verification scope; see [SoundCloud mode](soundcloud.md).

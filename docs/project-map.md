@@ -147,4 +147,4 @@ The common build step applies to both platforms. Packaging and actual verificati
 
 ## Future work
 
-**SoundCloud is a planned provider, not an implemented branch of the runtime flow.** Its unchecked task is in the [owner-directed future milestones](opportunities.md#owner-directed-future-milestones), alongside the existing theme milestone. Product decisions and longer-term plans remain in [decisions](decisions.md) and [feasibility](feasibility.md).
+**SoundCloud is implemented in beta.12.** `src-tauri/src/services.rs` owns the selected provider and independent application contexts; `src-tauri/src/soundcloud/` owns its catalog, streams, protected account, and isolated sign-in. `ProviderSwitch.svelte` and `providers.css` place the single animated control at the whole-window centre. Existing YouTube storage is retained; SoundCloud has its own queue/history/vault/browser namespaces. See [SoundCloud behavior and verification scope](soundcloud.md) and [owner-directed milestones](opportunities.md#owner-directed-future-milestones). Product decisions and longer-term plans remain in [decisions](decisions.md) and [feasibility](feasibility.md).
