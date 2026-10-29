@@ -11,7 +11,81 @@ use windows::core::Interface;
 
 static OPAQUE_BACKDROP_REMOVED: AtomicBool = AtomicBool::new(false);
 
-async fn material_state(window: &tauri::WebviewWindow) -> Option<(u8, u32, bool)> {
+#[derive(Clone, Copy)]
+struct MaterialState {
+    alpha: u8,
+    backdrop: Option<u32>,
+    accent: Option<u32>,
+    mica: Option<u32>,
+    media_controls: bool,
+}
+
+impl MaterialState {
+    fn matches(self, effect: tauri::window::Effect) -> bool {
+        match effect {
+            tauri::window::Effect::Blur => self.accent == Some(3),
+            tauri::window::Effect::Mica => self.backdrop == Some(2) || self.mica == Some(1),
+            tauri::window::Effect::Acrylic => self.backdrop == Some(3) || self.accent == Some(4),
+            _ => false,
+        }
+    }
+    fn removed(self) -> bool {
+        (self.backdrop.is_some() || self.accent.is_some() || self.mica.is_some())
+            && self.backdrop.is_none_or(|value| value <= 1)
+            && self.accent.is_none_or(|value| value == 0)
+            && self.mica.is_none_or(|value| value == 0)
+    }
+}
+
+unsafe fn read_dwm(hwnd: *mut std::ffi::c_void, attribute: u32) -> Option<u32> {
+    let mut value = 0_u32;
+    // SAFETY: the caller supplies the live main-window HWND on its owning UI
+    // thread; this buffer has the size required by these DWORD attributes.
+    let result = unsafe {
+        windows_sys::Win32::Graphics::Dwm::DwmGetWindowAttribute(
+            hwnd,
+            attribute,
+            (&mut value as *mut u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    (result >= 0).then_some(value)
+}
+
+unsafe fn read_accent(hwnd: *mut std::ffi::c_void) -> Option<u32> {
+    #[repr(C)]
+    #[derive(Default)]
+    struct Policy {
+        state: u32,
+        flags: u32,
+        color: u32,
+        animation: u32,
+    }
+    #[repr(C)]
+    struct Attribute {
+        kind: u32,
+        data: *mut std::ffi::c_void,
+        size: usize,
+    }
+    type GetAttribute = unsafe extern "system" fn(*mut std::ffi::c_void, *mut Attribute) -> i32;
+    // SAFETY: query the same sized ACCENT_POLICY/WCA_ACCENT_POLICY structure
+    // used by window-vibrancy. Missing/unsupported readback remains None.
+    unsafe {
+        let library = libloading::Library::new("user32.dll").ok()?;
+        let get = library
+            .get::<GetAttribute>(b"GetWindowCompositionAttribute\0")
+            .ok()?;
+        let mut policy = Policy::default();
+        let mut attribute = Attribute {
+            kind: 0x13,
+            data: (&mut policy as *mut Policy).cast(),
+            size: std::mem::size_of::<Policy>(),
+        };
+        (get(hwnd, &mut attribute) != 0).then_some(policy.state)
+    }
+}
+
+async fn material_state(window: &tauri::WebviewWindow) -> Option<MaterialState> {
     let copy = window.clone();
     let (send, receive) = tokio::sync::oneshot::channel();
     window
@@ -27,15 +101,17 @@ async fn material_state(window: &tauri::WebviewWindow) -> Option<(u8, u32, bool)
                     let mut color = COREWEBVIEW2_COLOR::default();
                     controller.DefaultBackgroundColor(&mut color).ok()?;
                     let hwnd = copy.hwnd().ok()?;
-                    let mut backdrop = 0_u32;
-                    let result = windows_sys::Win32::Graphics::Dwm::DwmGetWindowAttribute(
-                        hwnd.0,
-                        windows_sys::Win32::Graphics::Dwm::DWMWA_SYSTEMBACKDROP_TYPE as u32,
-                        (&mut backdrop as *mut u32).cast(),
-                        std::mem::size_of::<u32>() as u32,
-                    );
                     // SMTC ownership is UI-thread-local, just like the controller.
-                    (result >= 0).then_some((color.A, backdrop, crate::media_controls::available()))
+                    Some(MaterialState {
+                        alpha: color.A,
+                        backdrop: read_dwm(
+                            hwnd.0,
+                            windows_sys::Win32::Graphics::Dwm::DWMWA_SYSTEMBACKDROP_TYPE as u32,
+                        ),
+                        accent: read_accent(hwnd.0),
+                        mica: read_dwm(hwnd.0, 1029),
+                        media_controls: crate::media_controls::available(),
+                    })
                 })
             };
             let _ = send.send(state);
@@ -60,7 +136,7 @@ pub async fn report(
     let material = material_state(&window).await;
     if probe.get("phase").and_then(Value::as_str) == Some("opaque") {
         OPAQUE_BACKDROP_REMOVED.store(
-            material.is_some_and(|(alpha, kind, _)| alpha == 0 && kind == 1),
+            material.is_some_and(|state| state.alpha == 0 && state.removed()),
             Ordering::SeqCst,
         );
         return Ok(());
@@ -73,9 +149,17 @@ pub async fn report(
             .await
             .unwrap_or_else(|error| json!({"passed":false,"error":error.code}));
     let hwnd = window.hwnd().is_ok();
-    let transparent = material.is_some_and(|(alpha, _, _)| alpha == 0);
-    let backdrop = material.is_some_and(|(_, kind, _)| kind == 3);
-    let media_controls = material.is_some_and(|(_, _, available)| available);
+    let build = windows_version::OsVersion::current().build;
+    let selected = crate::windows_material::effect_for_build(build);
+    let selected_name = match selected {
+        tauri::window::Effect::Blur => "blur",
+        tauri::window::Effect::Mica => "mica",
+        _ => "acrylic",
+    };
+    let transparent = material.is_some_and(|state| state.alpha == 0);
+    let backdrop = material.is_some_and(|state| state.matches(selected));
+    let acrylic = material.is_some_and(|state| state.matches(tauri::window::Effect::Acrylic));
+    let media_controls = material.is_some_and(|state| state.media_controls);
     let opaque = OPAQUE_BACKDROP_REMOVED.load(Ordering::SeqCst);
     let passed = mounted
         && player
@@ -93,7 +177,9 @@ pub async fn report(
         "passed": passed, "webview2Mounted": mounted, "playerPresent": player,
         "nativeIpc": true, "runtimeAvailable": available, "windowHandle": hwnd,
         "mediaControlsAvailable": media_controls,
-        "transparentWebview": transparent, "nativeAcrylicBackdrop": backdrop,
+        "transparentWebview": transparent, "nativeAcrylicBackdrop": acrylic,
+        "windowsBuild":build,"selectedMaterial":selected_name,"nativeBackdropVerified":backdrop,
+        "materialReadback":{"dwmBackdrop":material.and_then(|state|state.backdrop),"accentPolicy":material.and_then(|state|state.accent),"legacyMica":material.and_then(|state|state.mica)},
         "opaqueBackdropRemoved": opaque, "signInHandoff": sign_in,
         "providerIsolation":provider_isolation,
         "cleanDarkText": probe.get("cleanDarkText").and_then(Value::as_bool) == Some(true),
@@ -142,3 +228,41 @@ pub const PROBE_SCRIPT: &str = r#"(() => {
   };
   setTimeout(probe, 500);
 })()"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::window::Effect;
+
+    #[test]
+    fn windows_material_missing_readback_is_not_treated_as_zero_or_success() {
+        let state = MaterialState {
+            alpha: 0,
+            backdrop: None,
+            accent: None,
+            mica: None,
+            media_controls: true,
+        };
+        assert!(!state.removed());
+        for effect in [Effect::Blur, Effect::Mica, Effect::Acrylic] {
+            assert!(!state.matches(effect));
+        }
+    }
+
+    #[test]
+    fn windows_material_readback_distinguishes_legacy_blur_and_modern_acrylic() {
+        let mut state = MaterialState {
+            alpha: 0,
+            backdrop: None,
+            accent: Some(3),
+            mica: None,
+            media_controls: true,
+        };
+        assert!(state.matches(Effect::Blur));
+        assert!(!state.matches(Effect::Acrylic) && !state.removed());
+        state.accent = Some(0);
+        assert!(state.removed());
+        state.backdrop = Some(3);
+        assert!(state.matches(Effect::Acrylic) && !state.removed());
+    }
+}

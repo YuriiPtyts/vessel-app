@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It follows the project through **Vessel 0.1.0-beta.13** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.14** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -78,6 +78,8 @@ Beta.10 adds account playlist creation and song additions, with Private as the d
 Beta.11 removes the dark text contour, shadow halo, and extra low-tint bolding. It uses Apple's native Regular Liquid Glass to support clean labels and hides sharp lower content beneath floating surfaces so overlapping text does not compete.
 
 Beta.12 adds SoundCloud and a centred sliding provider switch. Rust owns the selected service and routes requests to its separate account/catalog/player context. Switching pauses the outgoing service while retaining its position and queue. SoundCloud has its own sign-in browser and protected session; it does not replace or log out the Google account. See [SoundCloud mode](soundcloud.md).
+
+Beta.14 addresses reproduced handoff/library blocking paths reported on Windows 10: native YouTube candidates can finish while Google remains visible, verification keeps its deadline when candidates disappear, and completed SoundCloud library sections appear independently. Windows 10 now uses Blur to avoid the documented legacy Acrylic dragging issue. Tests and public provider reads cover these changes; real Windows 10 dragging and the owner's account flow need retesting.
 
 ## 3. The basic structure
 
@@ -286,7 +288,7 @@ SoundCloud has its own isolated window, browser-data namespace, verification, an
 
 The owner reports successful SoundCloud login. Beta.13 adds optional native diagnostics that distinguish a visible form from a verified post-submit handoff. Their temporary browser and in-memory vault are separate from normal listening, and reports exclude credentials, cookie values, full callback URLs, and screenshots. This is diagnostic coverage, with no claimed root-cause fix for the earlier white-window report. See [the diagnostic commands and scope](soundcloud.md#optional-native-login-diagnostics-beta13).
 
-Rust reads the browser session after the sign-in flow reaches a trusted YouTube completion page and asks YouTube Music to verify the account. It checks cookies available to Music first, allows the YouTube consent redirect, and retries incomplete verification briefly. A 45-second verification limit prevents a pending handoff from waiting indefinitely. Loading a page or finding an arbitrary cookie is not enough to display Connected; saving a verified session remains a separate protected step.
+Rust reads scoped native YouTube cookies on permitted Google/YouTube pages and asks YouTube Music to verify the account, even when Google remains visible. An unchanged remembered authentication candidate does not interrupt account choice. It checks cookies available to Music first, allows the YouTube consent redirect, and retries incomplete verification briefly. Its fixed 45-second verification limit survives temporary candidate disappearance. Loading a page or finding an arbitrary cookie is not enough to display Connected; saving a verified session remains a separate protected step.
 
 Remembered sessions use:
 

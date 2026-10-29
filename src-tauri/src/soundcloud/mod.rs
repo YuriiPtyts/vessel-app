@@ -45,6 +45,10 @@ struct State {
     collection: Option<Collection>,
     streams: VecDeque<(String, ResolvedTrack, Instant)>,
 }
+enum LibraryPart {
+    Likes,
+    Playlists,
+}
 pub(crate) struct SoundCloud {
     pub auth: Arc<auth::Auth>,
     api: client::Api,
@@ -506,8 +510,8 @@ impl SoundCloud {
         force: bool,
         revision: u64,
     ) -> Result<AccountLibrarySnapshot> {
-        let session = self.connected(revision)?;
         let _work = self.writes.lock().await;
+        let session = self.connected(revision)?;
         if !force {
             let state = self.state.lock().map_err(|_| AppError::internal())?;
             if state.library.account_revision == revision
@@ -518,7 +522,7 @@ impl SoundCloud {
                 return Ok(state.library.clone());
             }
         }
-        {
+        let loading = {
             let mut state = self.state.lock().map_err(|_| AppError::internal())?;
             state.library = if state.library.account_revision == revision {
                 state.library.clone()
@@ -528,69 +532,88 @@ impl SoundCloud {
             state.library.refreshing = true;
             state.library.likes_error = None;
             state.library.playlists_error = None;
-            (self.emit)(state.library.clone());
-        }
+            state.library.revision += 1;
+            state.library.clone()
+        };
+        (self.emit)(loading);
         let likes_path = format!("users/{}/likes", session.user_id);
         let playlists_path = format!("users/{}/playlists", session.user_id);
-        let (likes, playlists) = tokio::join!(
-            self.pages(&likes_path, revision, 10_000),
-            self.pages(&playlists_path, revision, 1_000)
-        );
-        self.connected(revision)?;
-        let mut state = self.state.lock().map_err(|_| AppError::internal())?;
-        match likes {
-            Ok(values) => {
-                let mut seen = BTreeSet::new();
-                let tracks: Vec<_> = values
-                    .iter()
-                    .filter_map(|value| parse_track(value.get("track").unwrap_or(value)))
-                    .filter(|track| seen.insert(track.id.clone()))
-                    .collect();
-                state.library.liked_ids = tracks.iter().map(|track| track.id.clone()).collect();
-                state.library.liked = tracks;
-                state.library.likes_ready = true;
-            }
-            Err(error) => state.library.likes_error = Some(error),
-        }
-        match playlists {
-            Ok(values) => {
-                let mut seen = BTreeSet::new();
-                let targets: Vec<_> = values
-                    .iter()
-                    .filter_map(parse_target)
-                    .filter(|target| seen.insert(target.item.id.clone()))
-                    .collect();
-                state.library.editable_playlist_ids = values
-                    .iter()
-                    .filter(|value| {
-                        value
-                            .pointer("/user/id")
-                            .and_then(Value::as_u64)
-                            .or_else(|| value.get("user_id").and_then(Value::as_u64))
-                            == Some(session.user_id)
-                    })
-                    .filter_map(parse_target)
-                    .map(|target| target.item.id)
-                    .collect();
-                state.library.playlists =
-                    targets.iter().map(|target| target.item.clone()).collect();
-                for target in targets {
-                    state.targets.insert(target.item.id.clone(), target);
+        let likes = self.pages(&likes_path, revision, 10_000);
+        let playlists = self.pages(&playlists_path, revision, 1_000);
+        tokio::pin!(likes, playlists);
+        let (mut likes_done, mut playlists_done) = (false, false);
+        for _ in 0..2 {
+            let (part, result) = tokio::select! {
+                result = &mut likes, if !likes_done => { likes_done = true; (LibraryPart::Likes, result) },
+                result = &mut playlists, if !playlists_done => { playlists_done = true; (LibraryPart::Playlists, result) },
+            };
+            // A completed section is useful immediately. A slow sibling must
+            // not hold it behind an all-or-nothing join; stale accounts still
+            // cannot publish either section.
+            self.connected(revision)?;
+            let snapshot = {
+                let mut state = self.state.lock().map_err(|_| AppError::internal())?;
+                if state.library.account_revision != revision {
+                    return Err(AppError::cancelled());
                 }
-                state.library.playlists_ready = true;
-            }
-            Err(error) => state.library.playlists_error = Some(error),
+                match (part, result) {
+                    (LibraryPart::Likes, Ok(values)) => {
+                        let mut seen = BTreeSet::new();
+                        let tracks: Vec<_> = values
+                            .iter()
+                            .filter_map(|value| parse_track(value.get("track").unwrap_or(value)))
+                            .filter(|track| seen.insert(track.id.clone()))
+                            .collect();
+                        state.library.liked_ids =
+                            tracks.iter().map(|track| track.id.clone()).collect();
+                        state.library.liked = tracks;
+                        state.library.likes_ready = true;
+                    }
+                    (LibraryPart::Likes, Err(error)) => state.library.likes_error = Some(error),
+                    (LibraryPart::Playlists, Ok(values)) => {
+                        let mut seen = BTreeSet::new();
+                        let targets: Vec<_> = values
+                            .iter()
+                            .filter_map(parse_target)
+                            .filter(|target| seen.insert(target.item.id.clone()))
+                            .collect();
+                        state.library.editable_playlist_ids = values
+                            .iter()
+                            .filter(|value| {
+                                value
+                                    .pointer("/user/id")
+                                    .and_then(Value::as_u64)
+                                    .or_else(|| value.get("user_id").and_then(Value::as_u64))
+                                    == Some(session.user_id)
+                            })
+                            .filter_map(parse_target)
+                            .map(|target| target.item.id)
+                            .collect();
+                        state.library.playlists =
+                            targets.iter().map(|target| target.item.clone()).collect();
+                        for target in targets {
+                            state.targets.insert(target.item.id.clone(), target);
+                        }
+                        state.library.playlists_ready = true;
+                    }
+                    (LibraryPart::Playlists, Err(error)) => {
+                        state.library.playlists_error = Some(error)
+                    }
+                }
+                state.library.connected = true;
+                state.library.refreshing = !(likes_done && playlists_done);
+                state.library.revision += 1;
+                if !state.library.refreshing
+                    && state.library.likes_error.is_none()
+                    && state.library.playlists_error.is_none()
+                {
+                    state.refreshed = Some(Instant::now());
+                }
+                state.library.clone()
+            };
+            (self.emit)(snapshot);
         }
-        state.library.connected = true;
-        state.library.refreshing = false;
-        state.library.revision += 1;
-        if state.library.likes_error.is_none() && state.library.playlists_error.is_none() {
-            state.refreshed = Some(Instant::now());
-        }
-        let snapshot = state.library.clone();
-        drop(state);
-        (self.emit)(snapshot.clone());
-        Ok(snapshot)
+        self.library()
     }
     async fn pages(&self, path: &str, revision: u64, limit: usize) -> Result<Vec<Value>> {
         let work = async {

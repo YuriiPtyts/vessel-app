@@ -110,6 +110,23 @@ impl CookieSession {
             .collect()
     }
 
+    pub(crate) fn same_authentication(&self, other: &Self) -> bool {
+        [
+            "SID",
+            "HSID",
+            "SSID",
+            "APISID",
+            "SAPISID",
+            "LOGIN_INFO",
+            "__Secure-1PSID",
+            "__Secure-3PSID",
+            "__Secure-1PAPISID",
+            "__Secure-3PAPISID",
+        ]
+        .iter()
+        .all(|name| self.cookie_value(name) == other.cookie_value(name))
+    }
+
     pub fn retained_browser_cookies(cookies: Vec<SessionCookie>) -> Result<Vec<SessionCookie>> {
         let now = epoch()? as i64;
         let cookies: Vec<_> = cookies

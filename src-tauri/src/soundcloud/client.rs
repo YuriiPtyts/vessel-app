@@ -249,7 +249,16 @@ fn parse_client_id(script: &str) -> Option<String> {
 }
 async fn body(mut response: Response, limit: usize) -> Result<Vec<u8>> {
     if !response.status().is_success() {
-        return Err(unavailable());
+        // Status is useful for account-library failures; response bodies,
+        // headers and private request/continuation URLs are not UI errors.
+        return Err(AppError::new(
+            "soundcloud_http",
+            format!(
+                "SoundCloud returned HTTP {}. Refresh to try again; reconnect SoundCloud if account access keeps failing.",
+                response.status().as_u16()
+            ),
+            true,
+        ));
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| unavailable())? {

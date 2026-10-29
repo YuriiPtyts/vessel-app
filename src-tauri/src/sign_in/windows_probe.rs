@@ -19,6 +19,12 @@ pub(super) async fn run(handle: AppHandle, app: Arc<Application>) -> Result<Valu
     .map_err(|_| browser_store_error())?;
     let operation = async {
         let browser = window.clone();
+        let baseline = Arc::new(
+            tokio::task::spawn_blocking(move || read_browser_session(&browser))
+                .await
+                .map_err(|_| AppError::internal())??,
+        );
+        let browser = window.clone();
         tokio::task::spawn_blocking(move || {
             browser
                 .set_cookie(
@@ -39,17 +45,19 @@ pub(super) async fn run(handle: AppHandle, app: Arc<Application>) -> Result<Valu
         wait_for_verified_session(
             || {
                 let browser = window.clone();
+                let baseline = baseline.clone();
                 async move {
-                    if !capture_origin(
-                        &"https://www.youtube.com/signin"
-                            .parse()
-                            .map_err(|_| AppError::internal())?,
-                    ) {
-                        return Err(verification_error());
-                    }
-                    tokio::task::spawn_blocking(move || read_browser_session(&browser))
-                        .await
-                        .map_err(|_| AppError::internal())?
+                    tokio::task::spawn_blocking(move || {
+                        // Only the top-level URL is a fixture; cookie insertion,
+                        // native readback and candidate eligibility are real.
+                        Ok(handoff_candidate(
+                            &"https://accounts.google.com/".parse().unwrap(),
+                            read_browser_session(&browser)?,
+                            baseline.as_ref().as_ref(),
+                        ))
+                    })
+                    .await
+                    .map_err(|_| AppError::internal())?
                 }
             },
             |_| {
@@ -79,6 +87,6 @@ pub(super) async fn run(handle: AppHandle, app: Arc<Application>) -> Result<Valu
     let closed = handle.get_webview_window(LABEL).is_none();
     let guest = app.account().mode == AccountMode::Guest;
     Ok(
-        json!({"cookieCapture": acknowledged, "handoffClosed": closed, "noUnverifiedConnection": guest, "passed": acknowledged && closed && guest, "realAccountTested": false}),
+        json!({"cookieCapture": acknowledged, "candidateOnGoogleOrigin":acknowledged,"topLevelOriginIsFixture":true,"handoffClosed": closed, "noUnverifiedConnection": guest, "passed": acknowledged && closed && guest, "realAccountTested": false}),
     )
 }

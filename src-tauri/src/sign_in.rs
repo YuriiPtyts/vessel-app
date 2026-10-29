@@ -225,16 +225,28 @@ impl SignIn {
         let restored = async {
             let cookies = app.saved_browser_cookies().await?;
             restore_browser_cookies(window.clone(), cookies).await?;
+            let browser = window.clone();
+            let baseline = tokio::time::timeout(
+                Duration::from_secs(10),
+                tokio::task::spawn_blocking(move || read_browser_session(&browser)),
+            )
+            .await
+            .map_err(|_| cookie_capture_error())?
+            .map_err(|_| cookie_capture_error())??;
             window
                 .navigate(START.parse().map_err(|_| AppError::internal())?)
-                .map_err(|_| AppError::internal())
+                .map_err(|_| AppError::internal())?;
+            Ok::<_, AppError>(baseline)
         }
         .await;
-        if let Err(error) = restored {
-            app.fail_sign_in(id, error.clone());
-            self.finish(&handle, &app, id);
-            return Err(error);
-        }
+        let baseline = match restored {
+            Ok(baseline) => Arc::new(baseline),
+            Err(error) => {
+                app.fail_sign_in(id, error.clone());
+                self.finish(&handle, &app, id);
+                return Err(error);
+            }
+        };
         let controller = Arc::downgrade(self);
         let state = app.account();
         tauri::async_runtime::spawn(async move {
@@ -245,11 +257,14 @@ impl SignIn {
                 let (session, profile) = wait_for_verified_session(
                     move || {
                         let window = capture_window.clone();
+                        let baseline = baseline.clone();
                         async move {
                             // WebView2 cookie APIs must not block its UI/event thread.
                             tokio::time::timeout(
                                 Duration::from_secs(10),
-                                tokio::task::spawn_blocking(move || capture_session(&window)),
+                                tokio::task::spawn_blocking(move || {
+                                    capture_session(&window, baseline.as_ref().as_ref())
+                                }),
                             )
                             .await
                             .map_err(|_| cookie_capture_error())?
@@ -389,12 +404,41 @@ pub async fn remember_smoke(handle: AppHandle) {
     // allowing WebKit to finish its application-termination lifecycle.
 }
 
-fn capture_session(window: &WebviewWindow) -> Result<Option<CookieSession>> {
+fn capture_session(
+    window: &WebviewWindow,
+    baseline: Option<&CookieSession>,
+) -> Result<Option<CookieSession>> {
     let url = window.url().map_err(|_| AppError::cancelled())?;
     if !capture_origin(&url) {
         return Ok(None);
     }
-    read_browser_session(window)
+    Ok(handoff_candidate(
+        &url,
+        read_browser_session(window)?,
+        baseline,
+    ))
+}
+
+fn handoff_candidate(
+    url: &url::Url,
+    candidate: Option<CookieSession>,
+    baseline: Option<&CookieSession>,
+) -> Option<CookieSession> {
+    if !capture_origin(url) {
+        return None;
+    }
+    let candidate = candidate?;
+    let youtube_completion = matches!(
+        url.host_str(),
+        Some("music.youtube.com" | "www.youtube.com" | "youtube.com" | "accounts.youtube.com")
+    );
+    // A native YouTube credential may arrive while the top-level document is
+    // still Google. Only a changed authentication candidate can finish there;
+    // an unchanged remembered session must not interrupt account choice/2FA.
+    if !youtube_completion && baseline.is_some_and(|old| candidate.same_authentication(old)) {
+        return None;
+    }
+    Some(candidate)
 }
 
 fn read_browser_session(window: &WebviewWindow) -> Result<Option<CookieSession>> {
@@ -441,11 +485,9 @@ fn read_browser_session(window: &WebviewWindow) -> Result<Option<CookieSession>>
 }
 
 fn capture_origin(url: &url::Url) -> bool {
+    // Eligibility remains native, YouTube-domain cookie scoped and verified
+    // by the account-menu endpoint. The displayed Google page is not proof.
     allowed_navigation(url)
-        && matches!(
-            url.host_str(),
-            Some("music.youtube.com" | "www.youtube.com" | "youtube.com" | "accounts.youtube.com")
-        )
 }
 
 fn cookie_capture_error() -> AppError {
@@ -468,24 +510,31 @@ where
 {
     let mut interval = tokio::time::interval(period);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut started = None;
+    let mut deadline = None;
     loop {
-        interval.tick().await;
-        let Some(session) = capture().await? else {
-            started = None;
+        let read = async {
+            interval.tick().await;
+            capture().await
+        };
+        let candidate = if let Some(deadline) = deadline {
+            tokio::time::timeout_at(deadline, read)
+                .await
+                .map_err(|_| verification_error())??
+        } else {
+            read.await?
+        };
+        let Some(session) = candidate else {
             continue;
         };
-        let started = started.get_or_insert_with(std::time::Instant::now);
-        let Some(remaining) = verification_limit.checked_sub(started.elapsed()) else {
-            return Err(verification_error());
-        };
-        match tokio::time::timeout(remaining, verify(session))
+        let deadline =
+            *deadline.get_or_insert_with(|| tokio::time::Instant::now() + verification_limit);
+        match tokio::time::timeout_at(deadline, verify(session))
             .await
             .map_err(|_| verification_error())?
         {
             Ok(verified) => return Ok(verified),
             Err(error) if matches!(error.code, "session_expired" | "catalog_unavailable") => {
-                if started.elapsed() >= verification_limit {
+                if tokio::time::Instant::now() >= deadline {
                     return Err(verification_error());
                 }
             }
@@ -592,6 +641,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn browser_handoff_deadline_survives_a_temporarily_missing_cookie_candidate() {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let result = tokio::time::timeout(
+            Duration::from_millis(150),
+            wait_for_verified_session(
+                || std::future::ready(Ok((calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0).then(fixture_session))),
+                |_| std::future::ready(Err::<(), _>(crate::account::session_error())),
+                Duration::from_millis(1),
+                Duration::from_millis(20),
+            ),
+        ).await.expect("Connecting must retain its verification deadline when WebView2 temporarily reports no candidate");
+        assert_eq!(result.unwrap_err().code, "sign_in_verification");
+    }
+
+    #[test]
+    fn browser_handoff_can_check_youtube_scoped_cookies_on_a_trusted_google_completion_page() {
+        assert!(
+            capture_origin(&"https://accounts.google.com/".parse().unwrap()),
+            "A native YouTube session candidate must not be ignored while Google remains the top-level page"
+        );
+    }
+
+    #[test]
+    fn google_handoff_waits_for_changed_youtube_authentication_not_tracking_cookies() {
+        let url = "https://accounts.google.com/".parse().unwrap();
+        let saved = fixture_session();
+        assert!(handoff_candidate(&url, Some(fixture_session()), Some(&saved)).is_none());
+        let mut tracking_only = fixture_session();
+        tracking_only.cookies.push(SessionCookie {
+            name: "VISITOR_INFO1_LIVE".into(),
+            ..saved.cookies[0].clone()
+        });
+        assert!(handoff_candidate(&url, Some(tracking_only), Some(&saved)).is_none());
+        let mut changed = fixture_session();
+        changed.cookies[0].value = "new-fixture-session".into();
+        assert!(handoff_candidate(&url, Some(changed), Some(&saved)).is_some());
+        let mut refreshed_login = fixture_session();
+        refreshed_login.cookies[1].value = "new-fixture-login".into();
+        assert!(handoff_candidate(&url, Some(refreshed_login), Some(&saved)).is_some());
+        assert!(
+            handoff_candidate(
+                &"https://music.youtube.com/".parse().unwrap(),
+                Some(fixture_session()),
+                Some(&saved)
+            )
+            .is_some()
+        );
+        assert!(
+            handoff_candidate(
+                &"https://youtube.com.attacker.test/".parse().unwrap(),
+                Some(fixture_session()),
+                None
+            )
+            .is_none()
+        );
+        assert!(handoff_candidate(&url, None, None).is_none());
+    }
+
+    #[tokio::test]
     async fn browser_handoff_does_not_retry_a_cancelled_attempt() {
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let error = wait_for_verified_session(
@@ -621,9 +729,6 @@ mod tests {
                 "completed YouTube handoff must not wait indefinitely: {origin}"
             );
         }
-        assert!(!capture_origin(
-            &"https://accounts.google.com/".parse().unwrap()
-        ));
         assert!(!capture_origin(
             &"https://youtube.com.attacker.test/".parse().unwrap()
         ));

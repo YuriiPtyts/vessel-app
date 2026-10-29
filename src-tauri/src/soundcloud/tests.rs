@@ -19,79 +19,86 @@ struct Server {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Server {
-    fn new(handler: impl Fn(&Request) -> (u16, Value) + Send + 'static) -> Self {
+    fn new(handler: impl Fn(&Request) -> (u16, Value) + Send + Sync + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
+        let serve = Arc::new(move |mut stream: TcpStream| {
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            let (end, length) = loop {
+                let mut chunk = [0; 4096];
+                let count = stream.read(&mut chunk).unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&chunk[..count]);
+                if let Some(end) = bytes.windows(4).position(|chunk| chunk == b"\r\n\r\n") {
+                    let text = std::str::from_utf8(&bytes[..end]).unwrap();
+                    let length = text
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|value| value.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    break (end + 4, length);
+                }
+            };
+            while bytes.len() < end + length {
+                let mut chunk = [0; 4096];
+                let count = stream.read(&mut chunk).unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&chunk[..count]);
+            }
+            let headers = std::str::from_utf8(&bytes[..end]).unwrap();
+            let mut line = headers.lines().next().unwrap().split_whitespace();
+            let method = line.next().unwrap().into();
+            let url = Url::parse(&format!("http://localhost{}", line.next().unwrap())).unwrap();
+            let authorization = headers.lines().find_map(|line| {
+                line.split_once(':')
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                    .map(|(_, value)| value.trim().to_owned())
+            });
+            let request = Request {
+                method,
+                url,
+                body: if length == 0 {
+                    Value::Null
+                } else {
+                    serde_json::from_slice(&bytes[end..end + length]).unwrap()
+                },
+                authorization,
+            };
+            let (status, body) = handler(&request);
+            recorded.lock().unwrap().push(request);
+            let bytes = if status == 204 {
+                Vec::new()
+            } else {
+                serde_json::to_vec(&body).unwrap()
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            );
+            let _ = stream.write_all(&bytes);
+        });
         let thread = std::thread::spawn(move || {
+            let mut workers = Vec::new();
             for stream in listener.incoming() {
                 if stopping.load(Ordering::SeqCst) {
                     break;
                 }
-                let mut stream = stream.unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                let mut bytes = Vec::new();
-                let (end, length) = loop {
-                    let mut chunk = [0; 4096];
-                    let count = stream.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    bytes.extend_from_slice(&chunk[..count]);
-                    if let Some(end) = bytes.windows(4).position(|chunk| chunk == b"\r\n\r\n") {
-                        let text = std::str::from_utf8(&bytes[..end]).unwrap();
-                        let length = text
-                            .lines()
-                            .find_map(|line| {
-                                line.to_ascii_lowercase()
-                                    .strip_prefix("content-length:")
-                                    .map(|value| value.trim().parse::<usize>().unwrap())
-                            })
-                            .unwrap_or(0);
-                        break (end + 4, length);
-                    }
-                };
-                while bytes.len() < end + length {
-                    let mut chunk = [0; 4096];
-                    let count = stream.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    bytes.extend_from_slice(&chunk[..count]);
-                }
-                let headers = std::str::from_utf8(&bytes[..end]).unwrap();
-                let mut line = headers.lines().next().unwrap().split_whitespace();
-                let method = line.next().unwrap().into();
-                let url = Url::parse(&format!("http://localhost{}", line.next().unwrap())).unwrap();
-                let authorization = headers.lines().find_map(|line| {
-                    line.split_once(':')
-                        .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-                        .map(|(_, value)| value.trim().to_owned())
-                });
-                let request = Request {
-                    method,
-                    url,
-                    body: if length == 0 {
-                        Value::Null
-                    } else {
-                        serde_json::from_slice(&bytes[end..end + length]).unwrap()
-                    },
-                    authorization,
-                };
-                let (status, body) = handler(&request);
-                recorded.lock().unwrap().push(request);
-                let bytes = if status == 204 {
-                    Vec::new()
-                } else {
-                    serde_json::to_vec(&body).unwrap()
-                };
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    bytes.len()
-                );
-                let _ = stream.write_all(&bytes);
+                let serve = serve.clone();
+                workers.push(std::thread::spawn(move || serve(stream.unwrap())));
+            }
+            for worker in workers {
+                worker.join().unwrap();
             }
         });
         Self {
@@ -139,7 +146,13 @@ fn playlist(id: u64) -> Value {
     json!({"id":id,"kind":"playlist","title":format!("Playlist {id}"),"user":{"id":42,"username":"Fixture"},"track_count":2,"tracks":[{"id":1},{"id":2}]})
 }
 fn fixture(server: &Server) -> Arc<SoundCloud> {
-    let mut cloud = SoundCloud::new(Arc::new(MemoryVault::default()), Arc::new(|_| {})).unwrap();
+    fixture_with_emit(server, Arc::new(|_| {}))
+}
+fn fixture_with_emit(
+    server: &Server,
+    emit: Arc<dyn Fn(AccountLibrarySnapshot) + Send + Sync>,
+) -> Arc<SoundCloud> {
+    let mut cloud = SoundCloud::new(Arc::new(MemoryVault::default()), emit).unwrap();
     let auth = cloud.auth.clone();
     Arc::get_mut(&mut cloud).unwrap().api = client::Api::fixture(auth, server.origin.clone());
     cloud
@@ -245,6 +258,106 @@ async fn verified_search_and_streams_keep_tokens_and_signed_sources_out_of_publi
     let count = server.requests.lock().unwrap().len();
     cloud.resolve("sc:1").await.unwrap();
     assert_eq!(server.requests.lock().unwrap().len(), count);
+}
+
+#[tokio::test]
+async fn connected_library_publishes_likes_without_waiting_for_slow_playlists() {
+    let server = Server::new(|request| match request.url.path() {
+        "/users/42/likes" => (200, json!({"collection":[{"track":song(3)}]})),
+        "/users/42/playlists" => {
+            std::thread::sleep(Duration::from_secs(2));
+            (200, json!({"collection":[playlist(50)]}))
+        }
+        _ => panic!("unexpected account-library request"),
+    });
+    let (updates, mut receiver) =
+        tokio::sync::watch::channel(AccountLibrarySnapshot::empty(0, 0, false));
+    let cloud = fixture_with_emit(
+        &server,
+        Arc::new(move |snapshot| {
+            updates.send_replace(snapshot);
+        }),
+    );
+    let revision = connect(&cloud).await;
+    let work = cloud.clone();
+    let refresh = tokio::spawn(async move { work.refresh_library(true, revision).await });
+    let ready = tokio::time::timeout(Duration::from_millis(500), async {
+        loop {
+            receiver.changed().await.unwrap();
+            let snapshot = receiver.borrow_and_update().clone();
+            if snapshot.likes_ready {
+                break snapshot;
+            }
+        }
+    })
+    .await
+    .expect("Connected SoundCloud likes must appear while playlists are still loading");
+    assert_eq!(ready.liked_ids, ["sc:3"]);
+    assert!(ready.refreshing);
+    assert!(!ready.playlists_ready);
+    let complete = refresh.await.unwrap().unwrap();
+    assert!(complete.playlists_ready && !complete.refreshing);
+    assert_eq!(complete.playlists[0].id, "sc:playlist:50");
+}
+
+#[tokio::test]
+async fn connected_library_keeps_loaded_likes_and_reports_a_redacted_playlist_http_failure() {
+    let server = Server::new(|request| match request.url.path() {
+        "/users/42/likes" => (200, json!({"collection":[{"track":song(3)}]})),
+        "/users/42/playlists" => (
+            403,
+            json!({"error":"https://private.test/?token=must-not-leak"}),
+        ),
+        _ => panic!("unexpected account-library request"),
+    });
+    let cloud = fixture(&server);
+    let revision = connect(&cloud).await;
+    let library = cloud.refresh_library(true, revision).await.unwrap();
+    assert_eq!(library.liked_ids, ["sc:3"]);
+    assert!(library.likes_ready && !library.refreshing && !library.playlists_ready);
+    let error = library.playlists_error.unwrap();
+    assert_eq!(error.code, "soundcloud_http");
+    assert!(error.message.contains("403"));
+    assert!(!error.message.contains("private.test") && !error.message.contains("must-not-leak"));
+    assert_eq!(cloud.account().mode, AccountMode::Connected);
+}
+
+#[tokio::test]
+async fn a_late_library_partition_cannot_repopulate_a_forgotten_account() {
+    let server = Server::new(|request| match request.url.path() {
+        "/users/42/likes" => (200, json!({"collection":[{"track":song(3)}]})),
+        "/users/42/playlists" => {
+            std::thread::sleep(Duration::from_secs(2));
+            (200, json!({"collection":[playlist(50)]}))
+        }
+        _ => panic!("unexpected account-library request"),
+    });
+    let (updates, mut receiver) =
+        tokio::sync::watch::channel(AccountLibrarySnapshot::empty(0, 0, false));
+    let cloud = fixture_with_emit(
+        &server,
+        Arc::new(move |snapshot| {
+            updates.send_replace(snapshot);
+        }),
+    );
+    let revision = connect(&cloud).await;
+    let work = cloud.clone();
+    let refresh = tokio::spawn(async move { work.refresh_library(true, revision).await });
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            receiver.changed().await.unwrap();
+            if receiver.borrow_and_update().likes_ready {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    cloud.auth.sign_out().await.unwrap();
+    cloud.invalidate();
+    assert_eq!(refresh.await.unwrap().unwrap_err().code, "cancelled");
+    let library = cloud.library().unwrap();
+    assert!(!library.connected && library.liked.is_empty() && library.playlists.is_empty());
 }
 
 #[tokio::test]
@@ -448,6 +561,57 @@ async fn cancellation_during_soundcloud_vault_storage_rolls_back_without_connect
     assert!(task.await.unwrap().is_err());
     assert!(vault.load().unwrap().is_none());
     assert_eq!(account.snapshot().mode, AccountMode::Guest);
+}
+
+#[tokio::test]
+#[ignore = "real public SoundCloud likes/playlist pagination and parsing; no credentials or audio"]
+async fn live_soundcloud_public_library_pages_load_and_parse() {
+    let cloud = SoundCloud::new(Arc::new(MemoryVault::default()), Arc::new(|_| {})).unwrap();
+    let data = cloud
+        .api
+        .request(
+            Method::GET,
+            "search/users",
+            &[("q", "chillhopmusic".into()), ("limit", "10".into())],
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+    let users = rows(&data).unwrap();
+    let user = users
+        .iter()
+        .find(|user| {
+            user.get("likes_count")
+                .and_then(Value::as_u64)
+                .is_some_and(|count| count > 0)
+                && user
+                    .get("playlist_count")
+                    .and_then(Value::as_u64)
+                    .is_some_and(|count| count > 0)
+        })
+        .unwrap()
+        .get("id")
+        .and_then(Value::as_u64)
+        .unwrap();
+    let likes_path = format!("users/{user}/likes");
+    let playlists_path = format!("users/{user}/playlists");
+    let (likes, playlists) = tokio::join!(
+        cloud.pages(&likes_path, 0, 10_000),
+        cloud.pages(&playlists_path, 0, 1_000),
+    );
+    let (likes, playlists) = (likes.unwrap(), playlists.unwrap());
+    let tracks = likes
+        .iter()
+        .filter_map(|value| parse_track(value.get("track").unwrap_or(value)))
+        .count();
+    let targets = playlists.iter().filter_map(parse_target).count();
+    assert!(tracks > 0 && targets > 0);
+    println!(
+        "SoundCloud public library: {} like rows, {tracks} playable tracks, {} playlist rows, {targets} parsed playlists; no credentials used",
+        likes.len(),
+        playlists.len()
+    );
 }
 
 #[tokio::test]

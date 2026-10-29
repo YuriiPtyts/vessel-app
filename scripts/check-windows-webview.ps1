@@ -11,7 +11,10 @@ try {
   if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Windows WebView2 smoke test failed before reporting.' }
   $result = Get-Content $report -Raw | ConvertFrom-Json
   if (-not $result.passed -or -not $result.nativeIpc -or -not $result.webview2Mounted -or -not $result.runtimeAvailable -or -not $result.mediaControlsAvailable) { throw 'Windows WebView2/native IPC/media-control contract failed.' }
-  if (-not $result.transparentWebview -or -not $result.nativeAcrylicBackdrop -or -not $result.opaqueBackdropRemoved -or -not $result.cleanDarkText -or -not $result.signInHandoff.passed) { throw 'Windows transparency, text, or cookie-handoff contract failed.' }
+  if (-not $result.transparentWebview -or -not $result.nativeBackdropVerified -or -not $result.opaqueBackdropRemoved -or -not $result.cleanDarkText -or -not $result.signInHandoff.passed) { throw 'Windows transparency, text, or cookie-handoff contract failed.' }
+  $expectedMaterial = if ($result.windowsBuild -lt 22000) { 'blur' } elseif ($result.windowsBuild -lt 22621) { 'mica' } else { 'acrylic' }
+  if ($result.selectedMaterial -ne $expectedMaterial) { throw 'Windows material does not match its OS build.' }
+  if (-not $result.signInHandoff.candidateOnGoogleOrigin) { throw 'YouTube-scoped cookie handoff on the trusted Google origin failed.' }
   if (-not $result.providerIsolation.passed) { throw 'Independent provider browser/account isolation failed.' }
   $result | ConvertTo-Json
 } finally {

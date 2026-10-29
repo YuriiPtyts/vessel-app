@@ -13,13 +13,13 @@ npm run package:windows
 
 `native-dependencies.windows.json` pins the exact Windows LGPL libmpv, yt-dlp, and Deno downloads and their SHA-256 hashes. Preparation verifies Windows x64 PE headers, the GPL-disabled libmpv configuration, and absence of explicit GPL/nonfree FFmpeg enable flags. The selected upstream LGPL build's provenance is recorded; this is not a complete independent transitive-license audit.
 
-The output is `.cache/releases/v0.1.0-beta.9/Vessel-0.1.0-beta.9-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
+The output is `.cache/releases/v0.1.0-beta.14/Vessel-0.1.0-beta.14-windows-x64-setup.exe`, accompanied by `SHA256SUMS-Windows` and `WINDOWS-BUILD.json`. These are generated artifacts and are not committed.
 
 ## Platform behavior
 
 - Rust loads `runtime/libmpv-2.dll`, `yt-dlp.exe`, and `deno.exe` from the installed application, including paths with spaces. The Windows backend uses standard mpv/WASAPI software volume with the bounded audio buffer; the macOS-specific output-gain extension is not required by the Windows DLL.
 - Windows System Media Transport Controls route previous/next and play/pause to the Rust queue/player. Support can be unavailable on Windows editions without the required media components; the on-screen player remains usable.
-- The main window and WebView2 background are now transparent, with native Acrylic behind the shared CSS tint. Runtime reduced-transparency changes remove/reapply the native backdrop; Windows' own transparency-effects preference still governs the OS effect.
+- The main window and WebView2 background are transparent. Native material is selected from the actual OS build: **Blur on Windows 10**, Mica on Windows 11 builds 22000–22620, and modern DWM Acrylic on build 22621+. Selection runs at startup and after runtime transparency changes; the config no longer forces legacy Acrylic first. Windows' own transparency-effects preference still governs the OS effect. CSS tint, light/dark choice, glyphs, and saved appearance values retain their existing rules.
 - Remembered account records are encrypted for the current user with Windows DPAPI and atomically stored under Vessel's application-data directory. They are never saved as plaintext session JSON. Sign-out removes the protected record. The isolated Google browser window remains subject to Google's embedded-login policies.
 - Extractor processes start without flashing console windows. A per-request Windows job object terminates the extractor and its transient runtime children on cancellation/timeout.
 - Installed data and appearance preferences are separate from the installer directory. The installer is per-user and the beta is not Authenticode-signed.
@@ -28,7 +28,15 @@ The output is `.cache/releases/v0.1.0-beta.9/Vessel-0.1.0-beta.9-windows-x64-set
 
 `.github/workflows/windows-build.yml` builds on a Windows runner. It checks the frontend and Rust code, runs real DPAPI/cancellation filesystem/kernel tests, opens an actual WebView2 window and invokes Rust from the mounted frontend in isolated diagnostic mode, then builds the normal installer. The installer test performs a silent install to a path with spaces, validates the installed runtimes, exercises local muted/null-output decoding and volume through the installed DLL, launches/closes the normal installed application, and uninstalls it.
 
-The strengthened WebView2 diagnostic reads the real controller background alpha and DWM backdrop type, checks remove/reapply behavior, and checks clean dark-mode text declarations. A separate InPrivate browser fixture sets a dummy scoped authentication cookie through Rust, reads it through the production cookie APIs, and closes through the sign-in controller after a substituted provider acknowledgement. It does not use real Google credentials or mark the fixture account Connected.
+The strengthened WebView2 diagnostic reads the real controller background alpha and the available DWM/legacy accent material attributes, checks build-specific selection and remove/reapply behavior, and checks clean dark-mode text declarations. Unsupported readbacks remain null and cannot pass as a verified zero. A separate InPrivate browser fixture sets a dummy YouTube authentication cookie through Rust, reads it through the production cookie APIs, and exercises candidate eligibility while the top-level Google origin is substituted. It closes through the sign-in controller after a substituted provider acknowledgement. It does not use real Google credentials or mark the fixture account Connected.
+
+### Windows 10 follow-up (beta.14)
+
+The owner reports Windows 10 beta.13 dragging delay, YouTube Music stuck on Connecting, and a Connected SoundCloud account whose likes/playlists do not load. Windows 10's old Acrylic path matches the [upstream documented dragging/resizing performance issue](https://github.com/tauri-apps/window-vibrancy#available-functions); `windows_material.rs` now chooses Blur there. There is no measured physical Windows 10 drag latency from this macOS development host, and the Windows Server 2025 CI runner exercises the modern compositor path. The owner must retest real dragging on Windows 10.
+
+Native YouTube candidates can now be checked while Google remains visible, with an authentication-cookie baseline so unchanged remembered credentials/tracking changes do not interrupt account choice. Every candidate still needs YouTube Music's account-menu verification. Once candidate verification begins, its 45-second deadline survives temporary cookie disappearance. The overall time allowed for entering credentials/2FA remains separate.
+
+SoundCloud publishes each fully fetched library section as soon as it completes, so a slow playlist request does not withhold ready likes (and vice versa). Failed sections retain their previous good data and show a redacted HTTP status when available. Late results cannot repopulate a forgotten account. These fixes have transport/behavior regressions; successful live Windows account acceptance/sync still needs the owner's beta.14 retest.
 
 The null-output decode check does not certify WASAPI on physical speakers, audible volume latency, media-key delivery, real Google credentials, or personalized/Premium playback. Those require owner testing on Windows hardware. See [verification](verification.md) for actual run results and [native dependencies](native-dependencies.md) for provenance and distribution scope.
 

@@ -9,6 +9,8 @@ mod media_controls;
 mod native_diagnostics;
 #[cfg(all(target_os = "windows", feature = "native-diagnostics"))]
 mod windows_diagnostics;
+#[cfg(any(target_os = "windows", test))]
+mod windows_material;
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -254,31 +256,7 @@ async fn set_material_mode(window: tauri::WebviewWindow, reduced: bool) -> Resul
         })?;
     }
     #[cfg(target_os = "windows")]
-    {
-        use tauri::window::{Color, Effect, EffectsBuilder};
-        window
-            .set_background_color(Some(Color(0, 0, 0, 0)))
-            .map_err(|_| {
-                vessel_app::error::AppError::new(
-                    "material_unavailable",
-                    "The Windows webview background could not be made transparent.",
-                    true,
-                )
-            })?;
-        let effects = if reduced {
-            None
-        } else {
-            Some(
-                EffectsBuilder::new()
-                    .effect(Effect::Acrylic)
-                    .color(Color(0, 0, 0, 1))
-                    .build(),
-            )
-        };
-        window.set_effects(effects).map_err(|_| {
-            vessel_app::error::AppError::new("material_unavailable", "The Windows backdrop could not be changed. Check Windows transparency effects and try again.", true)
-        })?;
-    }
+    windows_material::apply(&window, reduced)?;
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = (window, reduced);
     Ok(())
@@ -548,6 +526,10 @@ fn service_emitter(
 
 fn main() {
     let builder = tauri::Builder::default().setup(|app| {
+        #[cfg(target_os = "windows")]
+        if let Some(window) = app.get_webview_window("main") {
+            windows_material::apply(&window, false)?;
+        }
         let root = if cfg!(debug_assertions) {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime")
         } else {
@@ -856,10 +838,8 @@ mod tests {
         );
         assert_eq!(window["backgroundColor"], "#00000000");
         assert!(
-            window
-                .pointer("/windowEffects/effects")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|effects| effects.iter().any(|effect| effect == "acrylic"))
+            window["windowEffects"].is_null(),
+            "Startup must select a Windows-build-specific material instead of forcing slow legacy Acrylic on Windows 10"
         );
     }
     #[test]
