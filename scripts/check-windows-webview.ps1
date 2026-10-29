@@ -12,6 +12,7 @@ try {
   $result = Get-Content $report -Raw | ConvertFrom-Json
   if (-not $result.passed -or -not $result.nativeIpc -or -not $result.webview2Mounted -or -not $result.runtimeAvailable -or -not $result.mediaControlsAvailable) { throw 'Windows WebView2/native IPC/media-control contract failed.' }
   if (-not $result.transparentWebview -or -not $result.nativeAcrylicBackdrop -or -not $result.opaqueBackdropRemoved -or -not $result.cleanDarkText -or -not $result.signInHandoff.passed) { throw 'Windows transparency, text, or cookie-handoff contract failed.' }
+  if (-not $result.providerIsolation.passed) { throw 'Independent provider browser/account isolation failed.' }
   $result | ConvertTo-Json
 } finally {
   Remove-Item Env:VESSEL_WINDOWS_SMOKE_REPORT -ErrorAction SilentlyContinue

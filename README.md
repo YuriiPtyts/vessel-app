@@ -1,6 +1,6 @@
 # Vessel
 
-A lightweight YouTube Music desktop client for macOS and Windows. Private, proprietary project; all rights reserved. Vessel is the working name inherited from this workspace.
+A lightweight YouTube Music and SoundCloud desktop client for macOS and Windows. Private, proprietary project; all rights reserved. Vessel is the working name inherited from this workspace.
 
 Start with [Vessel, explained simply](docs/project-explained.md) for the full story: what the app does, how it was built, which languages and tools it uses, why they were chosen, and their trade-offs. The [project tree and runtime flow](docs/project-map.md) maps those explanations to the source files.
 
@@ -8,6 +8,8 @@ Start with [Vessel, explained simply](docs/project-explained.md) for the full st
 
 Search-first music app on Apple Silicon macOS and Windows x64, using Tauri 2, Rust, and Svelte 5:
 
+- Switch between YouTube Music and SoundCloud with one smoothly sliding button at the exact top-centre of the window, immediately left of search on desktop widths. Queues, history, and logins stay separate; switching pauses the outgoing service.
+- Connect SoundCloud in its own native browser window while keeping YouTube Music signed in. SoundCloud includes guest search/discovery, playlists/related tracks, native audio, account likes, and owned playlist actions. See [SoundCloud mode and account isolation](docs/soundcloud.md).
 - Search YouTube Music by song or artist name, with Songs/Music videos filters and paginated results.
 - Click a song or discovery card to play directly; resolution and format discovery happen behind the interface.
 - Browse YouTube Music's guest Home recommendations, open recommended playlist/album track lists, and return to recently played music.
@@ -46,7 +48,7 @@ Saved playlists scroll separately, keeping navigation and Appearance reachable. 
 
 ## Beta build
 
-The current development beta is **0.1.0-beta.11**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
+The current development beta is **0.1.0-beta.12**. See [beta notes and the remaining physical-audio checks](docs/beta-release.md). macOS packaging verifies app signatures after unzipping and mounting the DMG; trusted downloads require Developer ID signing and notarization. The Windows x64 package uses a native MSVC/NSIS build with bundled runtimes and WebView2 setup. See [macOS distribution](docs/macos-distribution.md) and [Windows builds](docs/windows-build.md). Native macOS render/queue tests cover the delayed gain regression; physical-device checks retain their documented limits.
 
 To inspect resource use in Neohtop or Activity Monitor, launch the installed app and search for **`Vessel`**. Older builds and direct Cargo development runs use **`vessel-app`**. WebKit WebContent, networking, and GPU helpers can appear separately; the main process alone is not the app's whole resource footprint.
 

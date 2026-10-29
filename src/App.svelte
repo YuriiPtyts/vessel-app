@@ -29,6 +29,7 @@
   import AccountPanel from './lib/components/AccountPanel.svelte';
   import PlaylistDialog from './lib/components/PlaylistDialog.svelte';
   import LyricsWindow from './lib/components/LyricsWindow.svelte';
+  import ProviderSwitch from './lib/components/ProviderSwitch.svelte';
   import {
     defaultAppearance,
     loadAppearance,
@@ -99,12 +100,32 @@
     type AccountSnapshot,
     type PlaybackSelection,
     type PlaylistMutation,
+    getProviderState,
+    setProvider,
+    onProvider,
+    onProviderAccount,
+    connectSoundCloud,
+    cancelSoundCloud,
+    openTrackSource,
+    type MusicProvider,
+    type ProviderSnapshot,
   } from './lib/native';
 
   type View = 'home' | 'search' | 'liked' | 'recent' | 'collection';
   let view = $state<View>('home');
   let report = $state<RuntimeReport | null>(null);
   let checking = $state(true);
+  let provider = $state<MusicProvider>('youtubeMusic');
+  let providerBusy = $state(false);
+  let providerEpoch = 0;
+  let providers = $state<ProviderSnapshot>({
+    active: 'youtubeMusic',
+    revision: 0,
+    youtube: guestAccount,
+    soundcloud: guestAccount,
+  });
+  const serviceName = $derived(provider === 'soundcloud' ? 'SoundCloud' : 'YouTube Music');
+  const connectionName = $derived(provider === 'soundcloud' ? 'SoundCloud' : 'Google');
   let error = $state<string | null>(null);
   let library = $state<LocalLibrary>({ liked: [], recent: [] });
   let accountLibrary = $state(emptyAccountLibrary());
@@ -167,6 +188,7 @@
   }
 
   function acceptVolume(snapshot: PlaybackSnapshot) {
+    if (providerBusy) return;
     if (snapshot.volumeRevision >= playback.volumeRevision) {
       playback = { ...playback, volume: snapshot.volume, volumeRevision: snapshot.volumeRevision };
     }
@@ -182,10 +204,12 @@
   async function mute() {
     if (!report) return;
     const interaction = ++volumeInteraction;
+    const epoch = providerEpoch;
     await volumeWriter.flush();
     if (interaction !== volumeInteraction) return;
     try {
-      acceptVolume(await toggleMute());
+      const snapshot = await toggleMute();
+      if (epoch === providerEpoch) acceptVolume(snapshot);
     } catch (failure) {
       error = errorMessage(failure);
     }
@@ -198,8 +222,8 @@
   );
   const likeDestination = $derived(
     account.mode === 'connected'
-      ? 'YouTube Music · synced with your account'
-      : 'Connect Google to like songs on YouTube Music',
+      ? `${serviceName} · synced with your account`
+      : `Connect ${connectionName} to like songs on ${serviceName}`,
   );
   const playing = $derived(playback.status === 'playing' || playback.status === 'buffering');
   const loadingTrack = $derived(
@@ -250,10 +274,32 @@
         if (disposed) return;
         report = runtime;
         if (runtime) {
+          providers = await getProviderState();
+          provider = providers.active;
           await Promise.all([
             register(
-              onPlayback((snapshot) => {
+              onProvider((snapshot) => {
+                if (disposed || snapshot.revision < providers.revision) return;
+                providers = snapshot;
+              }),
+            ),
+            register(
+              onProviderAccount(({ provider: source, account: snapshot }) => {
                 if (disposed) return;
+                if (
+                  snapshot.revision <
+                  (source === 'soundcloud' ? providers.soundcloud : providers.youtube).revision
+                )
+                  return;
+                providers =
+                  source === 'soundcloud'
+                    ? { ...providers, soundcloud: snapshot }
+                    : { ...providers, youtube: snapshot };
+              }),
+            ),
+            register(
+              onPlayback((snapshot, source) => {
+                if (disposed || providerBusy || (source && source !== provider)) return;
                 stateRevision.playback++;
                 acceptPlayback(snapshot);
                 if (snapshot.status === 'playing' && snapshot.track?.id !== lastHistoryId) {
@@ -263,32 +309,33 @@
               }),
             ),
             register(
-              onQueue((snapshot) => {
-                if (!disposed) {
+              onQueue((snapshot, source) => {
+                if (!disposed && !providerBusy && (!source || source === provider)) {
                   stateRevision.queue++;
                   updateQueue(snapshot);
                 }
               }),
             ),
             register(
-              onSelection((selection) => {
-                if (!disposed) {
+              onSelection((selection, source) => {
+                if (!disposed && !providerBusy && (!source || source === provider)) {
                   stateRevision.selection++;
                   inspection = selection;
                 }
               }),
             ),
             register(
-              onAccount((snapshot) => {
-                if (!disposed) {
+              onAccount((snapshot, source) => {
+                if (!disposed && !providerBusy && (!source || source === provider)) {
                   stateRevision.account++;
                   updateAccount(snapshot);
                 }
               }),
             ),
             register(
-              onAccountLibrary((snapshot) => {
-                if (!disposed) updateAccountLibrary(snapshot);
+              onAccountLibrary((snapshot, source) => {
+                if (!disposed && !providerBusy && (!source || source === provider))
+                  updateAccountLibrary(snapshot);
               }),
             ),
           ]);
@@ -315,14 +362,17 @@
   });
 
   async function refreshLibrary() {
+    const epoch = providerEpoch;
     try {
-      library = await getLibrary();
+      const result = await getLibrary();
+      if (epoch === providerEpoch) library = result;
     } catch (failure) {
       error = errorMessage(failure);
     }
   }
 
   async function refreshSession() {
+    const epoch = providerEpoch;
     const revision = { ...stateRevision };
     const [transport, upcoming, selection, profile] = await Promise.all([
       getPlayback(),
@@ -330,6 +380,7 @@
       getSelection(),
       getAccount(),
     ]);
+    if (epoch !== providerEpoch) return;
     if (revision.playback === stateRevision.playback) acceptPlayback(transport);
     updateQueue(upcoming);
     if (revision.selection === stateRevision.selection) inspection = selection;
@@ -369,6 +420,10 @@
     const changed = snapshot.revision !== account.revision;
     const connectionChanged = (snapshot.mode === 'connected') !== (account.mode === 'connected');
     account = snapshot;
+    providers =
+      provider === 'soundcloud'
+        ? { ...providers, soundcloud: snapshot }
+        : { ...providers, youtube: snapshot };
     if (changed || connectionChanged) {
       libraryRequest++;
       libraryLoading = false;
@@ -405,23 +460,25 @@
     if (!report || accountBusy) return;
     accountBusy = true;
     const revision = stateRevision.account;
+    const epoch = providerEpoch;
     try {
       const snapshot = await action();
-      if (revision === stateRevision.account) updateAccount(snapshot);
+      if (epoch === providerEpoch && revision === stateRevision.account) updateAccount(snapshot);
     } catch (failure) {
-      error = errorMessage(failure);
+      if (epoch === providerEpoch) error = errorMessage(failure);
     } finally {
-      accountBusy = false;
+      if (epoch === providerEpoch) accountBusy = false;
     }
   }
 
   async function queueAction(action: () => Promise<QueueSnapshot>) {
     if (!report) return;
+    const epoch = providerEpoch;
     try {
       const snapshot = await action();
-      updateQueue(snapshot);
+      if (epoch === providerEpoch) updateQueue(snapshot);
     } catch (failure) {
-      if (!isCancelled(failure)) error = errorMessage(failure);
+      if (epoch === providerEpoch && !isCancelled(failure)) error = errorMessage(failure);
     }
   }
 
@@ -549,13 +606,15 @@
   async function control(action: () => Promise<PlaybackSnapshot>) {
     if (!report || busy) return;
     busy = true;
+    const epoch = providerEpoch;
     error = null;
     try {
-      acceptPlayback(await action());
+      const snapshot = await action();
+      if (epoch === providerEpoch) acceptPlayback(snapshot);
     } catch (failure) {
-      if (!isCancelled(failure)) error = errorMessage(failure);
+      if (epoch === providerEpoch && !isCancelled(failure)) error = errorMessage(failure);
     } finally {
-      busy = false;
+      if (epoch === providerEpoch) busy = false;
     }
   }
 
@@ -605,7 +664,8 @@
     const liked = !likedIds.has(track.id);
     likeBusy = true;
     try {
-      updateAccountLibrary(await setAccountLike(track.id, liked, revision));
+      const snapshot = await setAccountLike(track.id, liked, revision);
+      if (interaction === likeRevision) updateAccountLibrary(snapshot);
     } catch (failure) {
       if (interaction === likeRevision && !isCancelled(failure)) error = errorMessage(failure);
     } finally {
@@ -637,6 +697,75 @@
       void openCollection(result.playlist, false, true);
     }
   }
+
+  function resetServiceView() {
+    providerEpoch++;
+    searchRevision++;
+    homeRevision++;
+    collectionRevision++;
+    playbackRevision++;
+    libraryRequest++;
+    likeRevision++;
+    volumeInteraction++;
+    clearTimeout(searchTimer);
+    query = '';
+    kind = 'songs';
+    view = 'home';
+    home = null;
+    results = null;
+    collection = null;
+    library = { liked: [], recent: [] };
+    accountLibrary = emptyAccountLibrary();
+    playback = emptyPlayback;
+    queue = emptyQueue;
+    inspection = null;
+    pending = null;
+    account = guestAccount;
+    homeLoading = false;
+    homeError = false;
+    searching = false;
+    loadingMore = false;
+    collectionLoading = false;
+    collectionMore = false;
+    libraryLoading = false;
+    libraryError = null;
+    likeBusy = false;
+    busy = false;
+    accountBusy = false;
+    settingsOpen = false;
+    accountOpen = false;
+    queueOpen = false;
+    playlistOpen = false;
+    lyricsOpen = false;
+    artworkOverlayOpen = false;
+    error = null;
+    lastHistoryId = undefined;
+    stateRevision.playback++;
+    stateRevision.queue++;
+    stateRevision.selection++;
+    stateRevision.account++;
+  }
+  async function switchService() {
+    if (!report || providerBusy) return;
+    providerBusy = true;
+    await volumeWriter.flush();
+    const previous = provider;
+    provider = provider === 'soundcloud' ? 'youtubeMusic' : 'soundcloud';
+    resetServiceView();
+    try {
+      providers = await setProvider(provider);
+      provider = providers.active;
+    } catch (failure) {
+      provider = previous;
+      error = errorMessage(failure);
+    } finally {
+      providerBusy = false;
+    }
+    await Promise.all([refreshSession(), refreshLibrary()]);
+    if (view === 'home' && !homeLoading) void loadHome();
+  }
+  const connectService = () => (provider === 'soundcloud' ? connectSoundCloud() : connectGoogle());
+  const cancelService = () => (provider === 'soundcloud' ? cancelSoundCloud() : cancelGoogle());
 
   async function updateAppearance(change: Partial<AppearancePreferences>, persist = true) {
     const previous = appearance;
@@ -742,6 +871,7 @@
 <div
   use:unifiedMaterial
   class="app-frame accent-{appearance.accent}"
+  data-provider={provider}
   aria-busy={checking}
   class:opaque={usesOpaqueMaterial(appearance)}
   class:light-glass={usesLightGlass(appearance)}
@@ -800,11 +930,11 @@
     {#if hasAccountCollection}
       <section class="sidebar-playlists" aria-label="Saved playlists">
         <div class="account-playlists-heading">
-          <p class="sidebar-label">YOUTUBE MUSIC PLAYLISTS</p>
+          <p class="sidebar-label">{serviceName.toUpperCase()} PLAYLISTS</p>
           <button
             class="icon-button"
-            aria-label="Refresh YouTube Music library"
-            title="Refresh YouTube Music library"
+            aria-label={`Refresh ${serviceName} library`}
+            title={`Refresh ${serviceName} library`}
             disabled={account.mode !== 'connected' || libraryLoading || accountLibrary.refreshing}
             onclick={() => void syncAccountLibrary(true)}
             ><RefreshCw
@@ -813,7 +943,7 @@
             /></button
           >
         </div>
-        <nav aria-label="YouTube Music playlists">
+        <nav aria-label={`${serviceName} playlists`}>
           {#each accountLibrary.playlists as item (item.id)}
             <button
               class:active={view === 'collection' &&
@@ -880,80 +1010,87 @@
         }}
         ><span></span><span
           >{account.profile?.name ??
-            (account.mode === 'signingIn' ? 'Connecting Google…' : 'Guest session')}</span
+            (account.mode === 'signingIn'
+              ? `Connecting ${connectionName}…`
+              : 'Guest session')}</span
         ></button
       >
     </div>
   </aside>
 
-  <div class="main-stage">
-    <header class="topbar">
-      <span class="page-breadcrumb"
-        >{view === 'home'
-          ? 'Listen now'
-          : view === 'search'
-            ? 'Search'
-            : 'Your collection'}<ChevronRight size={12} /></span
-      >
-      <form
-        class="search-field"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void runSearch();
-        }}
-        role="search"
-      >
-        <Search size={16} aria-hidden="true" /><input
-          type="search"
-          bind:this={searchInput}
-          bind:value={query}
-          oninput={typing}
-          placeholder="Songs, artists, a feeling…"
-          aria-label="Search music"
-          maxlength="160"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        {#if query}<button
-            type="button"
-            aria-label="Clear search"
-            onclick={() => {
-              query = '';
-              typing();
-              searchInput.focus();
-            }}><X size={13} /></button
-          >{:else}<kbd>⌘ K</kbd>{/if}
-      </form>
-      <button
-        class="theme-mode-trigger icon-button"
-        aria-label={appearance.colorMode === 'light'
-          ? 'Switch to dark appearance'
-          : 'Switch to light appearance'}
-        title={appearance.colorMode === 'light'
-          ? 'Switch to dark appearance'
-          : 'Switch to light appearance'}
-        onclick={() =>
-          void updateAppearance({ colorMode: appearance.colorMode === 'light' ? 'dark' : 'light' })}
-        >{#if appearance.colorMode === 'light'}<Moon size={17} />{:else}<Sun
-            size={17}
-          />{/if}</button
-      >
-      <button
-        class="guest-avatar"
-        data-popover-trigger="account"
-        title={account.profile?.name ?? 'Listening without an account'}
-        aria-label="Open account settings"
-        aria-expanded={accountOpen}
-        onclick={() => {
-          accountOpen = !accountOpen;
-          settingsOpen = false;
-          queueOpen = false;
-        }}
-      >
-        {account.profile?.name.slice(0, 1).toUpperCase() ?? 'G'}
-      </button>
-    </header>
+  <header class="topbar provider-topbar" data-tauri-drag-region>
+    <ProviderSwitch
+      {provider}
+      busy={providerBusy || !report}
+      youtubeConnected={providers.youtube.mode === 'connected'}
+      soundcloudConnected={providers.soundcloud.mode === 'connected'}
+      ontoggle={() => void switchService()}
+    />
+    <span class="page-breadcrumb"
+      >{view === 'home'
+        ? 'Listen now'
+        : view === 'search'
+          ? 'Search'
+          : 'Your collection'}<ChevronRight size={12} /></span
+    >
+    <form
+      class="search-field"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void runSearch();
+      }}
+      role="search"
+    >
+      <Search size={16} aria-hidden="true" /><input
+        type="search"
+        bind:this={searchInput}
+        bind:value={query}
+        oninput={typing}
+        placeholder="Songs, artists, a feeling…"
+        aria-label="Search music"
+        maxlength="160"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      {#if query}<button
+          type="button"
+          aria-label="Clear search"
+          onclick={() => {
+            query = '';
+            typing();
+            searchInput.focus();
+          }}><X size={13} /></button
+        >{:else}<kbd>⌘ K</kbd>{/if}
+    </form>
+    <button
+      class="theme-mode-trigger icon-button"
+      aria-label={appearance.colorMode === 'light'
+        ? 'Switch to dark appearance'
+        : 'Switch to light appearance'}
+      title={appearance.colorMode === 'light'
+        ? 'Switch to dark appearance'
+        : 'Switch to light appearance'}
+      onclick={() =>
+        void updateAppearance({ colorMode: appearance.colorMode === 'light' ? 'dark' : 'light' })}
+      >{#if appearance.colorMode === 'light'}<Moon size={17} />{:else}<Sun size={17} />{/if}</button
+    >
+    <button
+      class="guest-avatar"
+      data-popover-trigger="account"
+      title={account.profile?.name ?? 'Listening without an account'}
+      aria-label="Open account settings"
+      aria-expanded={accountOpen}
+      onclick={() => {
+        accountOpen = !accountOpen;
+        settingsOpen = false;
+        queueOpen = false;
+      }}
+    >
+      {account.profile?.name.slice(0, 1).toUpperCase() ?? 'G'}
+    </button>
+  </header>
 
+  <div class="main-stage">
     <main class="content-scroll" id="main-content">
       {#if !checking && !report}<div class="notice preview-notice">
           Browser preview · Open the desktop app to search and listen.
@@ -973,6 +1110,7 @@
 
       {#if view === 'home'}
         <HomeView
+          sourceName={serviceName}
           feed={home}
           loading={homeLoading}
           failed={homeError}
@@ -987,7 +1125,7 @@
           <Artwork url={collection.item.thumbnailUrl} className="collection-page-art" size={256} />
           <div>
             <button class="text-button" onclick={() => navigate('home')}
-              >YouTube Music<ChevronRight size={12} /></button
+              >{serviceName}<ChevronRight size={12} /></button
             >
             <p class="eyebrow">{collection.item.kind}</p>
             <h1>{collection.item.title}</h1>
@@ -996,7 +1134,7 @@
         </section>
         {#if collectionLoading}<div class="empty-collection" role="status">
             <LoaderCircle size={24} class="spin" />
-            <p>Loading songs from YouTube Music…</p>
+            <p>Loading songs from {serviceName}…</p>
           </div>
         {:else if collection.tracks.length}<TrackList
             tracks={collection.tracks}
@@ -1040,7 +1178,7 @@
                 ? 'Finding your music…'
                 : 'What sounds good today?'}
           </h1>
-          <p>Search the YouTube Music catalog. Press play. Make yourself at home.</p>
+          <p>Search the {serviceName} catalog. Press play. Make yourself at home.</p>
         </section>
         <div class="result-toolbar">
           <div class="filter-pills" aria-label="Search category">
@@ -1048,11 +1186,11 @@
               class:chosen={kind === 'songs'}
               aria-pressed={kind === 'songs'}
               onclick={() => filter('songs')}><Music2 size={14} />Songs</button
-            ><button
-              class:chosen={kind === 'videos'}
-              aria-pressed={kind === 'videos'}
-              onclick={() => filter('videos')}><AudioLines size={14} />Music videos</button
-            >
+            >{#if provider === 'youtubeMusic'}<button
+                class:chosen={kind === 'videos'}
+                aria-pressed={kind === 'videos'}
+                onclick={() => filter('videos')}><AudioLines size={14} />Music videos</button
+              >{/if}
           </div>
           {#if results}<span class="result-count"
               >{results.tracks.length} {results.kind === 'songs' ? 'songs' : 'music videos'}</span
@@ -1099,7 +1237,7 @@
               A favorite artist. A half-remembered lyric.<br />Start with whatever's on your mind.
             </p>
             <button class="secondary-button" onclick={() => navigate('home')}
-              >Explore YouTube Music<ArrowRight size={14} /></button
+              >Explore {serviceName}<ArrowRight size={14} /></button
             >
           </div>{/if}
       {:else}
@@ -1112,14 +1250,14 @@
           >
           <div>
             <p class="eyebrow">
-              YOUR COLLECTION · {view === 'liked' ? 'YOUTUBE MUSIC' : 'ON THIS DEVICE'}
+              YOUR COLLECTION · {view === 'liked' ? serviceName.toUpperCase() : 'ON THIS DEVICE'}
             </p>
             <h1>
               {view === 'liked' ? 'Liked songs' : 'Recently played'}
             </h1>
             <p>
               {listTracks.length} songs · {view === 'liked'
-                ? 'Your YouTube Music favorites.'
+                ? `Your ${serviceName} favorites.`
                 : 'Pick up a familiar feeling.'}
             </p>
           </div>
@@ -1128,11 +1266,11 @@
           <div class="account-library-toolbar">
             <span role="status"
               >{likeBusy
-                ? 'Saving changes to YouTube Music…'
+                ? `Saving changes to ${serviceName}…`
                 : libraryLoading || accountLibrary.refreshing
                   ? 'Syncing your library…'
                   : account.mode !== 'connected'
-                    ? 'Reconnect your Google account to sync likes.'
+                    ? `Reconnect your ${connectionName} account to sync likes.`
                     : accountLibrary.likesReady
                       ? `${accountLibrary.likedIds.length} account likes`
                       : 'Your account likes have not synced yet.'}</span
@@ -1180,7 +1318,7 @@
                   : 'Connect to see your liked songs.'}
             </h2>
             <p>
-              {account.error?.message ?? 'Your liked songs come from your YouTube Music account.'}
+              {account.error?.message ?? `Your liked songs come from your ${serviceName} account.`}
             </p>
             {#if account.mode !== 'connected'}<button
                 class="primary-button"
@@ -1188,7 +1326,7 @@
                   !report ||
                   account.mode === 'checking' ||
                   account.mode === 'signingIn'}
-                onclick={() => void accountAction(connectGoogle)}>Connect Google</button
+                onclick={() => void accountAction(connectService)}>Connect {connectionName}</button
               >{/if}
           </div>
         {:else}<div class="empty-collection">
@@ -1225,6 +1363,13 @@
   {/if}
 
   <PlayerBar
+    soundcloud={provider === 'soundcloud'}
+    onsource={() => {
+      if (playback.track)
+        void openTrackSource(playback.track.id).catch((failure) => {
+          error = errorMessage(failure);
+        });
+    }}
     {playback}
     pending={loadingTrack}
     {inspection}
@@ -1300,14 +1445,19 @@
       onretry={() => void queueAction(retryRadio)}
     />{/if}
   {#if accountOpen}<AccountPanel
+      sourceName={serviceName}
+      {connectionName}
+      otherConnected={(provider === 'soundcloud' ? providers.youtube : providers.soundcloud)
+        .mode === 'connected'}
+      otherName={provider === 'soundcloud' ? 'YouTube Music' : 'SoundCloud'}
       {account}
       available={Boolean(report)}
       busy={accountBusy}
       onclose={() => {
         accountOpen = false;
       }}
-      onconnect={() => void accountAction(connectGoogle)}
-      oncancel={() => void accountAction(cancelGoogle)}
+      onconnect={() => void accountAction(connectService)}
+      oncancel={() => void accountAction(cancelService)}
       onsignout={() => {
         void cancel();
         void accountAction(signOut);
@@ -1315,6 +1465,8 @@
     />{/if}
   {#if playlistOpen}
     <PlaylistDialog
+      sourceName={serviceName}
+      {connectionName}
       track={playlistTrack}
       library={accountLibrary}
       connected={account.mode === 'connected'}

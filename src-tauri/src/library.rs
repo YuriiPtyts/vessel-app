@@ -4,9 +4,8 @@ use std::{fs, io::Read, path::PathBuf, sync::Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    catalog::valid_video_id,
     error::{AppError, Result},
-    provider::{Track, artwork_url},
+    provider::{Track, artwork_url, valid_track_id},
 };
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize)]
@@ -120,7 +119,7 @@ fn read_library(path: &PathBuf) -> Result<LibrarySnapshot> {
     }
     let mut data: LibrarySnapshot = serde_json::from_slice(&bytes).map_err(|_| library_error())?;
     for list in [&mut data.liked, &mut data.recent] {
-        list.retain(|track| valid_video_id(&track.id));
+        list.retain(|track| valid_track_id(&track.id));
         for track in list.iter_mut() {
             track.thumbnail_url = track.thumbnail_url.as_deref().and_then(artwork_url);
         }

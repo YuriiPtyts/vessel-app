@@ -9,12 +9,14 @@
     onclose,
     children,
     className = '',
+    sourceName = 'YouTube Music',
   }: {
     title: string;
     subtitle?: string;
     onclose: () => void;
     children: Snippet;
     className?: string;
+    sourceName?: string;
   } = $props();
 </script>
 
@@ -27,7 +29,7 @@
 >
   <header class="feature-dialog-heading">
     <div>
-      <p class="eyebrow">YOUTUBE MUSIC</p>
+      <p class="eyebrow">{sourceName.toUpperCase()}</p>
       <h2>{title}</h2>
       {#if subtitle}<p>{subtitle}</p>{/if}
     </div>

@@ -1,9 +1,12 @@
-# Vessel 0.1.0-beta.11
+# Vessel 0.1.0-beta.12
 
 Private Apple Silicon macOS and Windows x64 development beta. This is a prerelease, not a stable release.
 
 ## Included changes
 
+- SoundCloud mode with real guest search/discovery, playlist browsing, related tracks, native audio, source attribution, and account likes/owned playlist actions.
+- A single smooth sliding YouTube Music/SoundCloud switch at the exact horizontal window centre, with search to its right on desktop widths. Switching pauses the outgoing service and retains independent queues/history.
+- Independent SoundCloud sign-in browser and protected session storage. Both services can stay connected; signing out of one does not forget the other. See [SoundCloud scope and verification](soundcloud.md).
 - Crisp dark-theme lettering at low tint: removed the dark contour/halo, forced-white fill, and extra bolding. Text retains normal system-font weights and semantic primary/secondary colors.
 - Apple's native Regular Liquid Glass supports the text-heavy macOS interface. Floating surfaces also occlude sharp underlying content so popover labels do not compete with letters behind them. Material alpha still follows the selected tint. See [material-supported typography](glass-readability.md#material-supported-typography).
 - Create playlists in your verified YouTube Music account, with Private as the default visibility. Add songs from track rows or the player to your own playlists, or create a playlist containing the chosen song. Provider-confirmed changes appear in the sidebar; failures do not claim success or retry automatically.
@@ -30,11 +33,11 @@ Private Apple Silicon macOS and Windows x64 development beta. This is a prerelea
 
 ### macOS
 
-Download `Vessel-0.1.0-beta.11-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
+Download `Vessel-0.1.0-beta.12-macos-arm64.dmg` from the private release, open it, quit any older Vessel instance, and drag **Vessel.app** onto the **Applications** shortcut. Eject the Vessel disk after copying, then launch the app from Applications. The image is read-only and includes the playback and extractor runtimes; end users do not install Python, mpv, or Deno.
 
 ### Windows
 
-Run `Vessel-0.1.0-beta.11-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. Windows controls whether native transparency effects are enabled. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
+Run `Vessel-0.1.0-beta.12-windows-x64-setup.exe` and follow the per-user installer, then open Vessel from the Start menu. The installer includes the playback/extraction runtimes and handles WebView2 setup if required. Windows controls whether native transparency effects are enabled. The beta is not Authenticode-signed. `SHA256SUMS-Windows` and `WINDOWS-BUILD.json` accompany the installer. See [Windows verification scope](windows-build.md).
 
 ### First launch if macOS blocks Vessel
 

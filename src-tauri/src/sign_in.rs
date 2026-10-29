@@ -15,7 +15,7 @@ use crate::{
 const LABEL: &str = "google-sign-in";
 const START: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F&hl=en";
 
-fn session_window<'a>(
+pub(crate) fn session_window<'a>(
     handle: &'a AppHandle,
     label: &str,
     url: WebviewUrl,
@@ -24,6 +24,10 @@ fn session_window<'a>(
     #[cfg(target_os = "macos")]
     if persistent_browser_available() {
         let identifier = if cfg!(feature = "native-diagnostics")
+            && std::env::var_os("VESSEL_PROVIDER_DIAGNOSTICS").is_some()
+        {
+            0xc37edb746c3b4b929ca4d193166c5864_u128.to_be_bytes()
+        } else if cfg!(feature = "native-diagnostics")
             && (std::env::var_os("VESSEL_REMEMBER_DIAGNOSTICS").is_some()
                 || std::env::var_os("VESSEL_SIGN_IN_DIAGNOSTICS").is_some())
         {
@@ -64,7 +68,7 @@ pub fn persistent_browser_available() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
+pub(crate) async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
     let (send, receive) = tokio::sync::oneshot::channel();
     window.with_webview(move |platform| {
         let send = Mutex::new(Some(send));
@@ -89,7 +93,7 @@ async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
 }
 
 #[cfg(not(target_os = "macos"))]
-async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
+pub(crate) async fn clear_browser_data(window: WebviewWindow) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         window
             .clear_all_browsing_data()

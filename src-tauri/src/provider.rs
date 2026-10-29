@@ -245,6 +245,52 @@ pub(crate) fn test_source(path: &str) -> StreamSource {
 }
 
 impl ResolvedTrack {
+    pub(crate) fn from_sources(
+        track: Track,
+        formats: Vec<(AudioFormat, String)>,
+        account_revision: u64,
+        account_source: bool,
+    ) -> Result<Self> {
+        let recommended = formats
+            .iter()
+            .max_by(|(a, _), (b, _)| {
+                a.bitrate_kbps
+                    .unwrap_or(0.0)
+                    .total_cmp(&b.bitrate_kbps.unwrap_or(0.0))
+            })
+            .map(|(format, _)| format.id.clone())
+            .ok_or_else(|| {
+                AppError::new(
+                    "source_unavailable",
+                    "No playable audio source was returned.",
+                    true,
+                )
+            })?;
+        let streams = formats
+            .iter()
+            .map(|(format, url)| {
+                (
+                    format.id.clone(),
+                    StreamSource {
+                        url: url.clone(),
+                        headers: BTreeMap::new(),
+                        available_at: None,
+                        account_source,
+                    },
+                )
+            })
+            .collect();
+        Ok(Self {
+            inspection: TrackInspection {
+                track,
+                formats: formats.into_iter().map(|(format, _)| format).collect(),
+                recommended_format_id: recommended,
+                account_source,
+            },
+            account_revision,
+            streams,
+        })
+    }
     fn ready_in(&self, now: f64) -> Result<Duration> {
         let ready = self
             .streams
@@ -350,6 +396,10 @@ pub fn canonical_track_url(input: &str) -> Result<String> {
     }
     // Strip playlist/tracking/time parameters and never allow yt-dlp's generic URL extractor.
     Ok(format!("https://www.youtube.com/watch?v={id}"))
+}
+
+pub(crate) fn valid_track_id(id: &str) -> bool {
+    crate::catalog::valid_video_id(id) || crate::soundcloud::track_id(id).is_some()
 }
 
 async fn resolve_profile(
@@ -696,7 +746,9 @@ pub(crate) fn artwork_url(value: &str) -> Option<String> {
     (url.scheme() == "https"
         && url.username().is_empty()
         && url.password().is_none()
-        && (host.ends_with(".googleusercontent.com") || host.ends_with(".ytimg.com")))
+        && (host.ends_with(".googleusercontent.com")
+            || host.ends_with(".ytimg.com")
+            || host.ends_with(".sndcdn.com")))
     .then(|| value.to_owned())
 }
 

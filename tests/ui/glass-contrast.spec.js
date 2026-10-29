@@ -36,6 +36,7 @@ for (const colorMode of ['light', 'dark']) {
         content: `html { background: var(--test-desktop, #fff) !important; } body { background: transparent !important; }`,
       });
       const common = [
+        { selector: '.provider-option' },
         { selector: '.sidebar-label' },
         { selector: '.sidebar nav > button > span' },
         { selector: '.session-label' },

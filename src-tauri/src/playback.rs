@@ -70,6 +70,7 @@ enum Operation {
     WarmUp,
     Load(Box<LoadRequest>),
     Pause(bool),
+    Suspend,
     Seek(f64),
     Volume(f64),
     ToggleMute,
@@ -98,6 +99,9 @@ pub(crate) struct Player {
 }
 
 impl Player {
+    pub async fn suspend(&self) -> Result<PlaybackSnapshot> {
+        self.request(Operation::Suspend).await
+    }
     pub fn new(paths: RuntimePaths, emit: Arc<dyn Fn(PlaybackSnapshot) + Send + Sync>) -> Self {
         let (sender, receiver) = mpsc::sync_channel(32);
         let snapshot = Arc::new(Mutex::new(PlaybackSnapshot::default()));
@@ -358,6 +362,22 @@ fn apply(
             } else {
                 PlaybackStatus::Playing
             };
+        }
+        Operation::Suspend => {
+            if snapshot.track.is_some()
+                && matches!(
+                    snapshot.status,
+                    PlaybackStatus::Loading
+                        | PlaybackStatus::Playing
+                        | PlaybackStatus::Buffering
+                        | PlaybackStatus::Paused
+                )
+            {
+                if let Some(engine) = engine.as_ref() {
+                    engine.set("pause", "yes")?;
+                }
+                snapshot.status = PlaybackStatus::Paused;
+            }
         }
         Operation::Seek(position) => {
             require_track(snapshot)?;

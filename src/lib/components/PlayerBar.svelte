@@ -28,6 +28,7 @@
     type TrackInspection,
   } from '../native';
   import Artwork from './Artwork.svelte';
+  import SoundCloudMark from './SoundCloudMark.svelte';
 
   let {
     playback,
@@ -57,6 +58,8 @@
     onlyrics,
     onplaylist,
     lyricsOpen,
+    soundcloud = false,
+    onsource,
   }: {
     playback: PlaybackSnapshot;
     pending: Track | null;
@@ -85,6 +88,8 @@
     onlyrics: () => void;
     onplaylist: () => void;
     lyricsOpen: boolean;
+    soundcloud?: boolean;
+    onsource: () => void;
   } = $props();
   let seekDraft = $state<number | null>(null);
   let volumeDraft = $state<number | null>(null);
@@ -147,9 +152,15 @@
     <div class="now-playing-copy">
       <h2>{shown?.title ?? 'A little space for your music'}</h2>
       <p>
-        {pending
-          ? 'Getting your song ready…'
-          : (playback.track?.artist ?? 'Find something you love')}
+        {#if !pending && soundcloud && playback.track}<button
+            class="provider-source-link"
+            aria-label="Open track on SoundCloud"
+            title="SoundCloud · open original track"
+            onclick={onsource}
+            ><SoundCloudMark size={14} /><span>SoundCloud · {playback.track.artist}</span></button
+          >{:else}{pending
+            ? 'Getting your song ready…'
+            : (playback.track?.artist ?? 'Find something you love')}{/if}
       </p>
     </div>
     <button
@@ -264,7 +275,9 @@
           >{playback.activeFormat
             ? playback.activeFormat.codec === 'opus'
               ? 'OPUS'
-              : 'AAC'
+              : playback.activeFormat.codec === 'mp3'
+                ? 'MP3'
+                : 'AAC'
             : 'AUTO'}</span
         ><ChevronUp size={12} /></button
       >
@@ -333,9 +346,9 @@
     <button
       class="icon-button lyrics-trigger"
       aria-label="Show lyrics"
-      title="Lyrics"
+      title={soundcloud ? 'SoundCloud does not supply lyrics through this integration' : 'Lyrics'}
       aria-expanded={lyricsOpen}
-      disabled={!playback.track || Boolean(pending)}
+      disabled={!playback.track || Boolean(pending) || soundcloud}
       onclick={(event) => {
         event.currentTarget.focus();
         onlyrics();

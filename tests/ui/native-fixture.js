@@ -2,7 +2,7 @@ export async function nativeFixture(page, options = {}) {
   await page.addInitScript((options) => {
     const cover = (color, name) =>
       `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x2=".8" y2="1"><stop stop-color="${color}"/><stop offset="1" stop-color="#24232c"/></linearGradient></defs><rect width="300" height="300" fill="url(#g)"/><circle cx="160" cy="133" r="85" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1"/><path d="M0 200Q100 70 300 210V300H0" fill="#dec6aa" fill-opacity=".2"/><text x="23" y="263" fill="#eee0cb" font-family="Georgia" font-size="19">${name}</text></svg>`)}`;
-    const tracks = [
+    let tracks = [
       {
         id: 'khnokW3Mw24',
         title: 'Instant Crush',
@@ -44,7 +44,7 @@ export async function nativeFixture(page, options = {}) {
         thumbnailUrl: cover('#986b64', 'Discovery'),
       },
     ];
-    const formats = [
+    let formats = [
       {
         id: '251',
         codec: 'opus',
@@ -62,7 +62,7 @@ export async function nativeFixture(page, options = {}) {
         channels: 2,
       },
     ];
-    const collectionItem = {
+    let collectionItem = {
       id: 'VLprovider_mix',
       kind: 'playlist',
       title: 'Provider Mix',
@@ -71,15 +71,15 @@ export async function nativeFixture(page, options = {}) {
       track: null,
     };
     let library = { liked: options.deviceLikes ? [tracks[0]] : [], recent: [] };
-    const savedPlaylist = {
+    let savedPlaylist = {
       ...collectionItem,
       id: 'VLaccount_saved',
       title: 'Saved discoveries',
       subtitle: 'Your YouTube Music playlist',
     };
     let remoteLiked = [tracks[1]];
-    const createdPlaylists = [];
-    const playlistTracks = new Map();
+    let createdPlaylists = [];
+    let playlistTracks = new Map();
     let lyricsRequests = 0;
     let libraryRevision = 0;
     let accountLibrary = null;
@@ -144,13 +144,124 @@ export async function nativeFixture(page, options = {}) {
       error: null,
     };
     let account = { mode: 'guest', profile: null, error: null, revision: 0 };
+    let provider = 'youtubeMusic';
+    let providerRevision = 0;
+    const youtubeTracks = structuredClone(tracks);
+    const youtubeFormats = structuredClone(formats);
+    const banks = new Map();
+    function providerSnapshot() {
+      const guest = { mode: 'guest', profile: null, error: null, revision: 0 };
+      return structuredClone({
+        active: provider,
+        revision: providerRevision,
+        youtube:
+          provider === 'youtubeMusic' ? account : (banks.get('youtubeMusic')?.account ?? guest),
+        soundcloud:
+          provider === 'soundcloud' ? account : (banks.get('soundcloud')?.account ?? guest),
+      });
+    }
+    function changeProvider(next) {
+      if (snapshot.track && ['playing', 'buffering', 'loading'].includes(snapshot.status))
+        snapshot = { ...snapshot, status: 'paused' };
+      banks.set(provider, {
+        tracks,
+        formats,
+        collectionItem,
+        savedPlaylist,
+        library,
+        remoteLiked,
+        createdPlaylists,
+        playlistTracks,
+        accountLibrary,
+        snapshot,
+        inspection,
+        queue,
+        account,
+        lastAudibleVolume,
+      });
+      let saved = banks.get(next);
+      if (!saved) {
+        const cloudTracks = youtubeTracks.map((track, index) => ({
+          ...track,
+          id: `sc:${1001 + index}`,
+          title: `Cloud track ${index + 1}`,
+          artist: 'Fixture Creator',
+          album: null,
+        }));
+        saved = {
+          tracks: cloudTracks,
+          formats: [{ ...youtubeFormats[1], id: 'hls_aac_160k', bitrateKbps: 160 }],
+          collectionItem: { ...collectionItem, id: 'sc:playlist:10', title: 'SoundCloud Mix' },
+          savedPlaylist: { ...savedPlaylist, id: 'sc:playlist:40', title: 'Cloud collection' },
+          library: { liked: [], recent: [] },
+          remoteLiked: [cloudTracks[1]],
+          createdPlaylists: [],
+          playlistTracks: new Map(),
+          accountLibrary: null,
+          snapshot: {
+            ...snapshot,
+            playbackId: 0,
+            status: 'idle',
+            track: null,
+            activeFormat: null,
+            positionSeconds: 0,
+            durationSeconds: null,
+          },
+          inspection: null,
+          queue: {
+            ...queue,
+            revision: 0,
+            tracks: [],
+            currentIndex: null,
+            running: false,
+            generating: false,
+            transitioning: false,
+            seedTitle: null,
+          },
+          account: { mode: 'guest', profile: null, error: null, revision: 0 },
+          lastAudibleVolume,
+        };
+      }
+      ({
+        tracks,
+        formats,
+        collectionItem,
+        savedPlaylist,
+        library,
+        remoteLiked,
+        createdPlaylists,
+        playlistTracks,
+        accountLibrary,
+        snapshot,
+        inspection,
+        queue,
+        account,
+        lastAudibleVolume,
+      } = saved);
+      provider = next;
+      providerRevision++;
+    }
+    const savedMode = options.provider ?? localStorage.getItem('__vesselFixtureProvider');
+    if (savedMode === 'soundcloud') changeProvider('soundcloud');
     const callbacks = new Map();
     const listeners = new Map();
     function emit(event, payload) {
       if (event === 'queue-state' && payload === queue) queue.revision++;
+      if (
+        [
+          'playback-state',
+          'queue-state',
+          'selection-state',
+          'account-state',
+          'account-library-state',
+        ].includes(event) &&
+        !(payload && typeof payload === 'object' && 'provider' in payload && 'snapshot' in payload)
+      )
+        payload = { provider, snapshot: payload };
       listeners.get(event)?.({ event, id: 1, payload: structuredClone(payload) });
     }
     function startSong(track) {
+      const scope = providerRevision;
       snapshot = {
         ...snapshot,
         playbackId: snapshot.playbackId + 1,
@@ -170,7 +281,8 @@ export async function nativeFixture(page, options = {}) {
         playback: structuredClone(snapshot),
       };
       setTimeout(() => {
-        if (snapshot.playbackId !== playbackId || !snapshot.track) return;
+        if (scope !== providerRevision || snapshot.playbackId !== playbackId || !snapshot.track)
+          return;
         snapshot = { ...snapshot, status: 'playing', decodedSampleRateHz: 48000 };
         library.recent = [track, ...library.recent.filter((old) => old.id !== track.id)];
         emit('playback-state', snapshot);
@@ -199,12 +311,15 @@ export async function nativeFixture(page, options = {}) {
     }
     window.isTauri = true;
     window.__vesselCalls = [];
+    window.__vesselServiceCalls = [];
     window.__vesselLibraryReplies = 0;
     window.__vesselPlaylistReplies = 0;
     window.__vesselVolumeInFlight = 0;
     window.__vesselMaxVolumeInFlight = 0;
     window.__vesselEmitSnapshot = (override) =>
       emit('playback-state', { ...snapshot, ...override });
+    window.__vesselEmitTaggedSnapshot = (source, override) =>
+      emit('playback-state', { provider: source, snapshot: { ...snapshot, ...override } });
     window.__vesselEmitQueue = (override) => emit('queue-state', { ...queue, ...override });
     window.__vesselAdvanceRadio = () => {
       queue.currentIndex++;
@@ -213,11 +328,16 @@ export async function nativeFixture(page, options = {}) {
     window.__vesselCompleteSignIn = () => {
       account = {
         mode: 'connected',
-        profile: { name: 'Fixture Listener', email: 'listener@example.test', pictureUrl: null },
+        profile: {
+          name: provider === 'soundcloud' ? 'Cloud Listener' : 'Fixture Listener',
+          email: 'listener@example.test',
+          pictureUrl: null,
+        },
         error: null,
         revision: account.revision + 1,
       };
       emit('account-state', account);
+      emit('provider-account-state', { provider, account });
     };
     window.__vesselExpireAccount = () => {
       account = {
@@ -245,7 +365,22 @@ export async function nativeFixture(page, options = {}) {
       },
       async invoke(command, args) {
         window.__vesselCalls.push({ command, args });
+        window.__vesselServiceCalls.push({ provider, command, args });
+        const scope = providerRevision;
         switch (command) {
+          case 'provider_state':
+            return providerSnapshot();
+          case 'set_provider': {
+            if (options.providerDelay)
+              await new Promise((resolve) => setTimeout(resolve, options.providerDelay));
+            changeProvider(args.provider);
+            localStorage.setItem('__vesselFixtureProvider', provider);
+            const result = providerSnapshot();
+            emit('provider-state', result);
+            return result;
+          }
+          case 'open_track_source':
+            return;
           case 'runtime_report':
             return {
               appVersion: 'test',
@@ -289,12 +424,16 @@ export async function nativeFixture(page, options = {}) {
                 retryable: true,
               };
             }
-            accountLibrary = reply;
-            emit('account-library-state', reply);
+            if (scope === providerRevision) {
+              accountLibrary = reply;
+              emit('account-library-state', reply);
+            }
             window.__vesselLibraryReplies++;
             return structuredClone(reply);
           }
           case 'set_account_like': {
+            const previous = accountLibrarySnapshot();
+            const known = structuredClone(tracks);
             if (options.likeDelay)
               await new Promise((resolve) => setTimeout(resolve, options.likeDelay));
             if (options.likeFailure)
@@ -303,7 +442,9 @@ export async function nativeFixture(page, options = {}) {
                 message: 'YouTube Music did not confirm this like change.',
                 retryable: true,
               };
-            const track = tracks.find((track) => track.id === args.videoId);
+            if (scope !== providerRevision)
+              return { ...previous, accountRevision: args.accountRevision };
+            const track = known.find((track) => track.id === args.videoId);
             remoteLiked = remoteLiked.filter((track) => track.id !== args.videoId);
             if (args.liked) remoteLiked.unshift(track);
             accountLibrary = accountLibrarySnapshot();
@@ -311,6 +452,7 @@ export async function nativeFixture(page, options = {}) {
             return structuredClone(accountLibrary);
           }
           case 'create_account_playlist': {
+            const previous = accountLibrarySnapshot();
             if (options.playlistDelay)
               await new Promise((resolve) => setTimeout(resolve, options.playlistDelay));
             if (options.playlistFailure)
@@ -320,9 +462,17 @@ export async function nativeFixture(page, options = {}) {
                   'YouTube Music did not confirm the playlist change. Check the playlist before retrying.',
                 retryable: true,
               };
+            if (scope !== providerRevision)
+              return {
+                playlist: { ...savedPlaylist, title: args.title },
+                library: { ...previous, accountRevision: args.accountRevision },
+              };
             const item = {
               ...savedPlaylist,
-              id: `VLPLcreated${createdPlaylists.length + 1}`,
+              id:
+                provider === 'soundcloud'
+                  ? `sc:playlist:${101 + createdPlaylists.length}`
+                  : `VLPLcreated${createdPlaylists.length + 1}`,
               title: args.title,
             };
             createdPlaylists.unshift(item);
@@ -336,6 +486,7 @@ export async function nativeFixture(page, options = {}) {
             return { playlist: item, library: reply };
           }
           case 'add_to_account_playlist': {
+            const beforeLibrary = accountLibrarySnapshot();
             if (options.playlistDelay)
               await new Promise((resolve) => setTimeout(resolve, options.playlistDelay));
             if (options.playlistFailure)
@@ -344,6 +495,11 @@ export async function nativeFixture(page, options = {}) {
                 message:
                   'YouTube Music did not confirm the playlist change. Check the playlist before retrying.',
                 retryable: true,
+              };
+            if (scope !== providerRevision)
+              return {
+                playlist: savedPlaylist,
+                library: { ...beforeLibrary, accountRevision: args.accountRevision },
               };
             const item =
               createdPlaylists.find((playlist) => playlist.id === args.id) ?? savedPlaylist;
@@ -405,12 +561,13 @@ export async function nativeFixture(page, options = {}) {
           case 'browse_collection':
             return { item: collectionItem, tracks: structuredClone(tracks), hasMore: false };
           case 'search_music': {
+            const responseTracks = structuredClone(tracks);
             if (args.query === 'older request')
               await new Promise((resolve) => setTimeout(resolve, 400));
             return {
               query: args.query,
               kind: args.kind,
-              tracks: structuredClone(tracks),
+              tracks: responseTracks,
               hasMore: !args.more,
             };
           }
@@ -463,6 +620,7 @@ export async function nativeFixture(page, options = {}) {
             emit('queue-state', queue);
             emit('selection-state', null);
             return structuredClone(queue);
+          case 'connect_soundcloud':
           case 'connect_google':
             account.mode = options.googleRejected ? 'unavailable' : 'signingIn';
             account.error = options.googleRejected
@@ -475,9 +633,11 @@ export async function nativeFixture(page, options = {}) {
               : null;
             emit('account-state', account);
             return structuredClone(account);
+          case 'cancel_soundcloud':
           case 'cancel_google':
             account.mode = account.profile ? 'connected' : 'guest';
             emit('account-state', account);
+            emit('provider-account-state', { provider, account });
             return structuredClone(account);
           case 'sign_out':
             stop();

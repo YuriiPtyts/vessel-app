@@ -9,6 +9,29 @@ export interface RuntimeReport {
   playbackDependenciesAvailable: boolean;
 }
 
+export type MusicProvider = 'youtubeMusic' | 'soundcloud';
+export interface ProviderSnapshot {
+  active: MusicProvider;
+  revision: number;
+  youtube: AccountSnapshot;
+  soundcloud: AccountSnapshot;
+}
+export const getProviderState = () => invoke<ProviderSnapshot>('provider_state');
+export const setProvider = (provider: MusicProvider) =>
+  invoke<ProviderSnapshot>('set_provider', { provider });
+export const connectSoundCloud = () => invoke<AccountSnapshot>('connect_soundcloud');
+export const cancelSoundCloud = () => invoke<AccountSnapshot>('cancel_soundcloud');
+export const openTrackSource = (videoId: string) => invoke<void>('open_track_source', { videoId });
+export const onProvider = (callback: (snapshot: ProviderSnapshot) => void) =>
+  listen<ProviderSnapshot>('provider-state', ({ payload }) => callback(payload));
+export const onProviderAccount = (
+  callback: (update: { provider: MusicProvider; account: AccountSnapshot }) => void,
+) =>
+  listen<{ provider: MusicProvider; account: AccountSnapshot }>(
+    'provider-account-state',
+    ({ payload }) => callback(payload),
+  );
+
 export interface AppError {
   code: string;
   message: string;
@@ -221,8 +244,9 @@ export const createAccountPlaylist = (
 export const addToAccountPlaylist = (id: string, videoId: string, accountRevision: number) =>
   invoke<PlaylistMutation>('add_to_account_playlist', { id, videoId, accountRevision });
 export const getSongLyrics = (videoId: string) => invoke<SongLyrics>('song_lyrics', { videoId });
-export const onAccountLibrary = (callback: (snapshot: AccountLibrarySnapshot) => void) =>
-  listen<AccountLibrarySnapshot>('account-library-state', ({ payload }) => callback(payload));
+export const onAccountLibrary = (
+  callback: (snapshot: AccountLibrarySnapshot, provider?: MusicProvider) => void,
+) => serviceEvent<AccountLibrarySnapshot>('account-library-state', callback);
 export const setMaterialMode = (reduced: boolean) => invoke<void>('set_material_mode', { reduced });
 export const cancelInspection = () => invoke<void>('cancel_inspection');
 export const playTrack = (trackId: string, formatId: string) =>
@@ -233,8 +257,9 @@ export const seekTrack = (position: number) => invoke<PlaybackSnapshot>('seek_tr
 export const setVolume = (volume: number) => invoke<PlaybackSnapshot>('set_volume', { volume });
 export const toggleMute = () => invoke<PlaybackSnapshot>('toggle_mute');
 export const stopPlayback = () => invoke<PlaybackSnapshot>('stop_playback');
-export const onPlayback = (callback: (snapshot: PlaybackSnapshot) => void) =>
-  listen<PlaybackSnapshot>('playback-state', ({ payload }) => callback(payload));
+export const onPlayback = (
+  callback: (snapshot: PlaybackSnapshot, provider?: MusicProvider) => void,
+) => serviceEvent<PlaybackSnapshot>('playback-state', callback);
 export const getQueue = () => invoke<QueueSnapshot>('queue_snapshot');
 export const getSelection = () => invoke<TrackInspection | null>('selection_snapshot');
 export const getAccount = () => invoke<AccountSnapshot>('account_snapshot');
@@ -250,12 +275,26 @@ export const retryRadio = () => invoke<QueueSnapshot>('retry_radio');
 export const connectGoogle = () => invoke<AccountSnapshot>('connect_google');
 export const cancelGoogle = () => invoke<AccountSnapshot>('cancel_google');
 export const signOut = () => invoke<AccountSnapshot>('sign_out');
-export const onQueue = (callback: (snapshot: QueueSnapshot) => void) =>
-  listen<QueueSnapshot>('queue-state', ({ payload }) => callback(payload));
-export const onSelection = (callback: (inspection: TrackInspection | null) => void) =>
-  listen<TrackInspection | null>('selection-state', ({ payload }) => callback(payload));
-export const onAccount = (callback: (snapshot: AccountSnapshot) => void) =>
-  listen<AccountSnapshot>('account-state', ({ payload }) => callback(payload));
+export const onQueue = (callback: (snapshot: QueueSnapshot, provider?: MusicProvider) => void) =>
+  serviceEvent<QueueSnapshot>('queue-state', callback);
+export const onSelection = (
+  callback: (inspection: TrackInspection | null, provider?: MusicProvider) => void,
+) => serviceEvent<TrackInspection | null>('selection-state', callback);
+export const onAccount = (
+  callback: (snapshot: AccountSnapshot, provider?: MusicProvider) => void,
+) => serviceEvent<AccountSnapshot>('account-state', callback);
+function serviceEvent<T>(event: string, callback: (snapshot: T, provider?: MusicProvider) => void) {
+  return listen<T | { provider: MusicProvider; snapshot: T }>(event, ({ payload }) => {
+    if (
+      payload !== null &&
+      typeof payload === 'object' &&
+      'provider' in payload &&
+      'snapshot' in payload
+    )
+      callback(payload.snapshot, payload.provider);
+    else callback(payload as T);
+  });
+}
 
 export function errorMessage(error: unknown): string {
   if (

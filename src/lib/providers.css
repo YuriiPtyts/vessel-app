@@ -1,0 +1,188 @@
+.app-frame {
+  --provider-switch-width: 264px;
+  --provider-header-height: 80px;
+}
+.app-frame .provider-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--provider-header-height);
+  z-index: 30;
+  display: block;
+  padding: 0;
+}
+.provider-topbar .page-breadcrumb {
+  position: absolute;
+  top: 32px;
+  left: calc(var(--sidebar-width) + 26px);
+  max-width: max(0px, calc(50vw - var(--sidebar-width) - var(--provider-switch-width) / 2 - 54px));
+  overflow: hidden;
+  white-space: nowrap;
+}
+.provider-switch {
+  position: absolute;
+  top: 19px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--provider-switch-width);
+  height: 42px;
+  padding: 4px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: transparent;
+  color: var(--theme-text);
+  isolation: isolate;
+}
+.provider-switch-slider {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / 2);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgb(var(--theme-foreground-rgb) / 0.08);
+  transform: translateX(0);
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.provider-switch.soundcloud-selected .provider-switch-slider {
+  transform: translateX(100%);
+}
+.provider-switch:disabled {
+  opacity: 1;
+}
+.provider-option {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  color: var(--theme-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.provider-option.chosen {
+  color: var(--theme-foreground);
+}
+.provider-option svg {
+  flex-shrink: 0;
+}
+.provider-connected {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--theme-green);
+}
+.provider-topbar .search-field {
+  position: absolute;
+  top: 20px;
+  left: calc(50% + var(--provider-switch-width) / 2 + 14px);
+  width: min(340px, calc(50% - var(--provider-switch-width) / 2 - 128px));
+  height: 40px;
+  margin: 0;
+}
+.provider-topbar .theme-mode-trigger {
+  position: absolute;
+  top: 23px;
+  right: 70px;
+}
+.provider-topbar .guest-avatar {
+  position: absolute;
+  top: 23px;
+  right: 24px;
+}
+.app-frame .main-stage {
+  padding-top: var(--provider-header-height);
+}
+.provider-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  color: var(--theme-secondary);
+  max-width: 100%;
+}
+.provider-source-link > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.other-provider-status {
+  color: var(--theme-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 12px 0;
+}
+@media (min-width: 1180px) {
+  .app-frame .now-playing-panel {
+    margin-top: var(--provider-header-height);
+    padding-top: 16px;
+  }
+}
+@media (max-width: 1020px) {
+  .provider-topbar .page-breadcrumb {
+    display: none;
+  }
+  .provider-topbar .search-field kbd {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .app-frame {
+    --provider-switch-width: 232px;
+    --provider-header-height: 120px;
+  }
+  .provider-topbar .search-field {
+    top: 72px;
+    left: calc(var(--sidebar-width) + 16px);
+    width: calc(100% - var(--sidebar-width) - 32px);
+    max-width: none;
+  }
+  .provider-topbar .theme-mode-trigger {
+    right: 52px;
+    top: 24px;
+  }
+  .provider-topbar .guest-avatar {
+    right: 12px;
+    top: 24px;
+  }
+  .provider-option {
+    gap: 4px;
+    font-size: 10px;
+  }
+  .app-frame .now-playing-panel {
+    top: 132px;
+  }
+}
+@media (max-width: 460px) {
+  .app-frame {
+    --provider-switch-width: 204px;
+  }
+  .provider-option {
+    gap: 3px;
+    font-size: 9px;
+  }
+  .provider-option svg {
+    width: 14px;
+  }
+  .provider-topbar .theme-mode-trigger {
+    right: 46px;
+    padding: 5px;
+  }
+  .provider-topbar .guest-avatar {
+    width: 26px;
+    height: 26px;
+    right: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .provider-switch-slider {
+    transition: none;
+  }
+}

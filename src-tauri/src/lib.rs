@@ -13,6 +13,8 @@ pub mod provider;
 pub mod queue;
 mod radio;
 pub mod runtime;
+pub mod services;
 pub mod sign_in;
+pub mod soundcloud;
 #[cfg(test)]
 mod test_audio;

@@ -11,6 +11,7 @@
     onrefresh,
     onplay,
     onbrowse,
+    sourceName = 'YouTube Music',
   }: {
     feed: HomeFeed | null;
     loading: boolean;
@@ -20,6 +21,7 @@
     onrefresh: () => void;
     onplay: (track: Track, tracks: Track[]) => void;
     onbrowse: (item: HomeItem) => void;
+    sourceName?: string;
   } = $props();
   function scrollShelf(id: string, direction: number) {
     document.getElementById(`items-${id}`)?.scrollBy({
@@ -31,9 +33,9 @@
 
 <section class="provider-home-heading">
   <div>
-    <p class="eyebrow">FROM YOUTUBE MUSIC</p>
+    <p class="eyebrow">FROM {sourceName.toUpperCase()}</p>
     <h1>Listen now<span>.</span></h1>
-    <p>Recommendations from YouTube Music, ready to explore.</p>
+    <p>Recommendations from {sourceName}, ready to explore.</p>
   </div>
   <div class="provider-home-actions">
     <span class="feed-scope"
@@ -47,12 +49,12 @@
   </div>
 </section>
 {#if failed && feed}<p class="notice" role="status">
-    YouTube Music could not refresh the feed. Showing the last loaded recommendations.
+    {sourceName} could not refresh the feed. Showing the last loaded recommendations.
   </p>{/if}
 {#if loading && !feed}
   <div
     class="provider-home-loading"
-    aria-label="Loading YouTube Music recommendations"
+    aria-label={`Loading ${sourceName} recommendations`}
     role="status"
   >
     {#each [1, 2] as shelf (shelf)}<section class="provider-shelf">
@@ -120,10 +122,10 @@
     <h2>{failed ? 'Your feed is taking a moment.' : 'A world of music awaits.'}</h2>
     <p>
       {failed
-        ? 'YouTube Music could not load guest recommendations. Search is still available.'
+        ? `${sourceName} could not load guest recommendations. Search is still available.`
         : connected
           ? 'No guest recommendations are available right now.'
-          : 'Open the desktop app to load the YouTube Music feed.'}
+          : `Open the desktop app to load the ${sourceName} feed.`}
     </p>
     {#if connected}<button class="secondary-button" onclick={onrefresh}
         >Refresh recommendations<RefreshCw size={14} /></button

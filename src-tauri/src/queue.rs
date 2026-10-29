@@ -460,7 +460,7 @@ fn load(path: &PathBuf) -> Result<Option<SavedQueue>> {
     if saved
         .tracks
         .iter()
-        .any(|track| !crate::catalog::valid_video_id(&track.id) || !ids.insert(&track.id))
+        .any(|track| !crate::provider::valid_track_id(&track.id) || !ids.insert(&track.id))
     {
         return Err(storage_error());
     }

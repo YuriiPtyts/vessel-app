@@ -19,6 +19,8 @@
     onclose,
     onupdated,
     onconnect,
+    sourceName = 'YouTube Music',
+    connectionName = 'Google',
   }: {
     track: Track | null;
     library: AccountLibrarySnapshot;
@@ -27,6 +29,8 @@
     onclose: () => void;
     onupdated: (result: PlaylistMutation, created: boolean) => void;
     onconnect: () => void;
+    sourceName?: string;
+    connectionName?: string;
   } = $props();
   let creating = $state(false);
   let title = $state('');
@@ -71,20 +75,21 @@
 
 <FeatureDialog
   title={track ? 'Add to playlist' : 'Create playlist'}
-  subtitle={track ? `${track.title} · ${track.artist}` : 'Saved in your YouTube Music account.'}
+  subtitle={track ? `${track.title} · ${track.artist}` : `Saved in your ${sourceName} account.`}
+  {sourceName}
   {onclose}
 >
   {#if !connected}
     <div class="feature-empty">
       <ListMusic size={30} />
       <h3>Connect to make playlists.</h3>
-      <p>Playlists and songs sync with your YouTube Music account.</p>
-      <button class="primary-button" onclick={onconnect}>Connect Google</button>
+      <p>Playlists and songs sync with your {sourceName} account.</p>
+      <button class="primary-button" onclick={onconnect}>Connect {connectionName}</button>
     </div>
   {:else}
     {#if failure}<p class="notice error-notice" role="alert">{failure}</p>{/if}
     {#if busy}<p class="feature-status" role="status">
-        <LoaderCircle size={16} class="spin" />Waiting for YouTube Music to confirm…
+        <LoaderCircle size={16} class="spin" />Waiting for {sourceName} to confirm…
       </p>{/if}
     {#if creating || !track}
       <form
@@ -114,9 +119,10 @@
         >
         <label
           >Visibility<select bind:value={privacy} disabled={busy}
-            ><option value="PRIVATE">Private · only you</option><option value="UNLISTED"
-              >Unlisted · anyone with the link</option
-            ><option value="PUBLIC">Public · anyone</option></select
+            ><option value="PRIVATE">Private · only you</option
+            >{#if sourceName !== 'SoundCloud'}<option value="UNLISTED"
+                >Unlisted · anyone with the link</option
+              >{/if}<option value="PUBLIC">Public · anyone</option></select
           ></label
         >
         {#if track}<p class="feature-status">This playlist will include “{track.title}”.</p>{/if}

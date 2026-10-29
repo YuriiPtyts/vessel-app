@@ -180,7 +180,7 @@ export function unifiedMaterial(root: HTMLElement) {
       node.setAttribute('data-material-content', '');
     };
     for (const node of root.querySelectorAll<HTMLElement>(
-      ':scope > .sidebar, :scope > .main-stage, :scope > .now-playing-panel',
+      ':scope > .sidebar, :scope > .main-stage, :scope > .topbar, :scope > .now-playing-panel',
     )) {
       if (!overlays.includes(node)) addForeground(node, bounds);
     }

@@ -19,6 +19,10 @@
     onconnect,
     oncancel,
     onsignout,
+    sourceName = 'YouTube Music',
+    connectionName = 'Google',
+    otherConnected = false,
+    otherName = 'SoundCloud',
   }: {
     account: AccountSnapshot;
     available: boolean;
@@ -27,6 +31,10 @@
     onconnect: () => void;
     oncancel: () => void;
     onsignout: () => void;
+    sourceName?: string;
+    connectionName?: string;
+    otherConnected?: boolean;
+    otherName?: string;
   } = $props();
   const connecting = $derived(account.mode === 'signingIn' || account.mode === 'checking');
 </script>
@@ -35,7 +43,7 @@
   class="music-popover account-popover"
   data-material-overlay
   use:dismissOnOutside={{ onDismiss: onclose, trigger: '[data-popover-trigger="account"]' }}
-  aria-label="Google account"
+  aria-label={`${connectionName} account`}
   in:panelReveal={{ origin: 'top-right' }}
 >
   <div class="popover-heading">
@@ -60,12 +68,12 @@
   {#if connecting}<p class="account-description" role="status">
       <LoaderCircle size={15} class="spin" />{account.mode === 'checking'
         ? 'Checking your saved session…'
-        : 'Finish signing in in the Google window.'}
+        : `Finish signing in in the ${connectionName} window.`}
     </p>
     <button class="secondary-button" disabled={busy} onclick={oncancel}>Cancel sign-in</button>
   {:else if account.mode === 'connected'}
     <p class="account-description">
-      Your likes and saved playlists sync with YouTube Music. Home and radio can use your account’s
+      Your likes and saved playlists sync with {sourceName}. Home and radio can use your account’s
       recommendations.
     </p>
     <button class="secondary-button" disabled={busy} onclick={onsignout}
@@ -73,18 +81,21 @@
     >
   {:else}
     <p class="account-description">
-      Connect Google for your YouTube Music likes, saved playlists, and recommendations.
+      Connect {connectionName} for your {sourceName} likes, saved playlists, and recommendations.
     </p>
     <button class="primary-button connect-google" disabled={!available || busy} onclick={onconnect}
       >{#if busy}<LoaderCircle size={15} class="spin" />{/if}{account.mode === 'expired'
-        ? 'Reconnect Google'
-        : 'Connect Google'}<ArrowUpRight size={15} /></button
+        ? `Reconnect ${connectionName}`
+        : `Connect ${connectionName}`}<ArrowUpRight size={15} /></button
     >
     <p class="account-caption">
-      Google opens in an isolated window and remembers you on this device. If Google declines
-      embedded sign-in, guest listening stays available.
+      {connectionName} opens in an isolated window and remembers you on this device. If {connectionName}
+      declines embedded sign-in, guest listening stays available.
     </p>
   {/if}
+  {#if otherConnected}<p class="other-provider-status">
+      {otherName} is still connected. These accounts are separate.
+    </p>{/if}
   {#if account.mode === 'expired' || account.mode === 'unavailable'}
     <button class="text-button forget-account" disabled={busy} onclick={onsignout}
       >Forget saved session</button
@@ -94,7 +105,7 @@
     <ShieldCheck size={17} />
     <p>
       Your verified session is protected by your operating system and restored on launch. Sign out
-      clears remembered Google sign-in; listening history and appearance stay on this device.
+      clears remembered {connectionName} sign-in only; listening history and appearance stay on this device.
     </p>
   </div>
 </section>

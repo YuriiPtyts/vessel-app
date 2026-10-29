@@ -7,6 +7,7 @@ import './lib/home.css';
 import './lib/controls.css';
 import './lib/readability.css';
 import './lib/features.css';
+import './lib/providers.css';
 
 const target = document.getElementById('app');
 

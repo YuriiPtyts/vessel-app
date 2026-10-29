@@ -42,7 +42,7 @@ pub struct AccountLibrarySnapshot {
 }
 
 impl AccountLibrarySnapshot {
-    fn empty(account_revision: u64, revision: u64, connected: bool) -> Self {
+    pub(crate) fn empty(account_revision: u64, revision: u64, connected: bool) -> Self {
         Self {
             revision,
             account_revision,

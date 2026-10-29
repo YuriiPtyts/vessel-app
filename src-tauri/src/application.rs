@@ -43,6 +43,8 @@ pub struct Application {
     library: Arc<LocalLibrary>,
     account: Arc<Account>,
     account_library: AccountLibrary,
+    soundcloud: Option<Arc<crate::soundcloud::SoundCloud>>,
+    foreground: AtomicBool,
     queue: Mutex<RadioQueue>,
     events: Arc<dyn Fn(AppEvent) + Send + Sync>,
     transition: AsyncMutex<()>,
@@ -50,6 +52,7 @@ pub struct Application {
     radio_scheduled: AtomicBool,
     radio_cancel: watch::Sender<u64>,
     prefetch_cancel: watch::Sender<u64>,
+    service_cancel: watch::Sender<u64>,
 }
 
 #[derive(serde::Serialize)]
@@ -96,10 +99,44 @@ impl Application {
         vault: Arc<dyn SessionVault>,
         emit: impl Fn(AppEvent) + Send + Sync + 'static,
     ) -> Result<Arc<Self>> {
+        Self::with_provider(paths, library, queue_path, vault, None, emit)
+    }
+    pub fn soundcloud_desktop(
+        paths: RuntimePaths,
+        library: Arc<LocalLibrary>,
+        queue_path: PathBuf,
+        isolated: bool,
+        emit: impl Fn(AppEvent) + Send + Sync + 'static,
+    ) -> Result<Arc<Self>> {
+        let events: Arc<dyn Fn(AppEvent) + Send + Sync> = Arc::new(emit);
+        let library_events = events.clone();
+        let cloud = crate::soundcloud::SoundCloud::desktop(
+            queue_path.parent().ok_or_else(AppError::internal)?,
+            isolated,
+            Arc::new(move |snapshot| library_events(AppEvent::AccountLibrary(snapshot))),
+        )?;
+        Self::with_provider(
+            paths,
+            library,
+            Some(queue_path),
+            Arc::new(MemoryVault::default()),
+            Some(cloud),
+            move |event| events(event),
+        )
+    }
+    fn with_provider(
+        paths: RuntimePaths,
+        library: Arc<LocalLibrary>,
+        queue_path: Option<PathBuf>,
+        vault: Arc<dyn SessionVault>,
+        soundcloud: Option<Arc<crate::soundcloud::SoundCloud>>,
+        emit: impl Fn(AppEvent) + Send + Sync + 'static,
+    ) -> Result<Arc<Self>> {
         let (cancellation, _) = watch::channel(0);
         let (closing, _) = watch::channel(false);
         let (radio_cancel, _) = watch::channel(0);
         let (prefetch_cancel, _) = watch::channel(0);
+        let (service_cancel, _) = watch::channel(0);
         let (updates, receiver) = watch::channel(PlaybackSnapshot::default());
         let events: Arc<dyn Fn(AppEvent) + Send + Sync> = Arc::new(emit);
         let playback_events = events.clone();
@@ -135,6 +172,8 @@ impl Application {
             catalog: MusicCatalog::with_account(account.clone())?,
             account,
             account_library,
+            soundcloud,
+            foreground: AtomicBool::new(true),
             library,
             resolved: Mutex::new(None),
             resolver_slot: Semaphore::new(1),
@@ -142,6 +181,7 @@ impl Application {
             closing,
             radio_cancel,
             prefetch_cancel,
+            service_cancel,
             events,
             queue: Mutex::new(RadioQueue::new(queue_path)),
             transition: AsyncMutex::new(()),
@@ -151,7 +191,9 @@ impl Application {
         Self::monitor(
             Arc::downgrade(&app),
             receiver,
-            app.account.subscribe(),
+            app.soundcloud
+                .as_ref()
+                .map_or_else(|| app.account.subscribe(), |cloud| cloud.subscribe()),
             app.closing.subscribe(),
         );
         Ok(app)
@@ -177,11 +219,12 @@ impl Application {
                         if change.is_err() { break; }
                         let status = account.borrow_and_update().clone();
                         let Some(app) = weak.upgrade() else { break };
-                        let _ = app.account_library.synchronize_account();
+                        if app.soundcloud.is_none() { let _ = app.account_library.synchronize_account(); }
                         if status.revision != account_revision {
                             account_revision = status.revision;
                             app.catalog.invalidate();
                             app.resolver.invalidate();
+                            if let Some(cloud) = &app.soundcloud { cloud.invalidate(); }
                             app.cancel_radio();
                             app.cancel_inspection();
                             if let Ok(mut queue) = app.queue.lock() { queue.account_changed(); }
@@ -210,6 +253,9 @@ impl Application {
     }
 
     fn handle_playback(self: &Arc<Self>, snapshot: &PlaybackSnapshot) {
+        if !self.foreground.load(Ordering::SeqCst) {
+            return;
+        }
         let advance = self
             .queue
             .lock()
@@ -241,7 +287,9 @@ impl Application {
             .map_err(|_| AppError::internal())
     }
     pub fn account(&self) -> AccountSnapshot {
-        self.account.snapshot()
+        self.soundcloud
+            .as_ref()
+            .map_or_else(|| self.account.snapshot(), |cloud| cloud.account())
     }
     pub fn runtime_available(&self) -> bool {
         self.paths.available()
@@ -268,7 +316,7 @@ impl Application {
             _ = cancel.changed() => return Err(AppError::cancelled()),
         };
         let resolved = tokio::select! {
-            result = self.resolver.resolve(url) => result?,
+            result = self.resolve_source(url) => result?,
             _ = cancel.changed() => return Err(AppError::cancelled()),
         };
         let mut current = self.resolved.lock().map_err(|_| AppError::internal())?;
@@ -280,16 +328,30 @@ impl Application {
         Ok((inspection, generation))
     }
     pub async fn search(&self, query: &str, kind: SearchKind, more: bool) -> Result<SearchResults> {
+        if let Some(cloud) = &self.soundcloud {
+            return self.service_work(cloud.search(query, kind, more)).await;
+        }
         self.catalog.search(query, kind, more).await
     }
     pub async fn home(&self, refresh: bool) -> Result<crate::home::HomeFeed> {
+        if let Some(cloud) = &self.soundcloud {
+            return self.service_work(cloud.home(refresh)).await;
+        }
         self.catalog.home(refresh).await
     }
     pub async fn collection(&self, id: &str, more: bool) -> Result<crate::home::CollectionPage> {
+        if let Some(cloud) = &self.soundcloud {
+            return self
+                .service_work(cloud.collection(id, more, self.account().revision))
+                .await;
+        }
         self.catalog.collection(id, more).await
     }
 
     pub fn account_library(&self) -> Result<AccountLibrarySnapshot> {
+        if let Some(cloud) = &self.soundcloud {
+            return cloud.library();
+        }
         self.account_library.snapshot()
     }
     pub async fn refresh_account_library(
@@ -297,6 +359,9 @@ impl Application {
         force: bool,
         revision: u64,
     ) -> Result<AccountLibrarySnapshot> {
+        if let Some(cloud) = &self.soundcloud {
+            return cloud.refresh_library(force, revision).await;
+        }
         self.account_library
             .refresh(&self.catalog, force, revision)
             .await
@@ -307,6 +372,9 @@ impl Application {
         more: bool,
         revision: u64,
     ) -> Result<crate::home::CollectionPage> {
+        if let Some(cloud) = &self.soundcloud {
+            return cloud.collection(id, more, revision).await;
+        }
         self.account_library
             .collection(&self.catalog, id, more, revision)
             .await
@@ -317,6 +385,12 @@ impl Application {
         liked: bool,
         revision: u64,
     ) -> Result<AccountLibrarySnapshot> {
+        if let Some(cloud) = &self.soundcloud {
+            let track = self
+                .find_track(id)
+                .ok_or_else(crate::soundcloud::unavailable)?;
+            return cloud.set_like(id, track, liked, revision).await;
+        }
         self.account_library.check_revision(revision)?;
         let track = self.find_track(id).ok_or_else(|| {
             AppError::new(
@@ -337,6 +411,11 @@ impl Application {
         video_id: Option<&str>,
         revision: u64,
     ) -> Result<crate::account_library::PlaylistMutation> {
+        if let Some(cloud) = &self.soundcloud {
+            return cloud
+                .create_playlist(title, description, privacy, video_id, revision)
+                .await;
+        }
         self.account_library.check_revision(revision)?;
         let track = video_id
             .map(|id| {
@@ -359,6 +438,9 @@ impl Application {
         video_id: &str,
         revision: u64,
     ) -> Result<crate::account_library::PlaylistMutation> {
+        if let Some(cloud) = &self.soundcloud {
+            return cloud.add_to_playlist(id, video_id, revision).await;
+        }
         self.account_library.check_revision(revision)?;
         let track = self.find_track(video_id).ok_or_else(|| {
             AppError::new(
@@ -372,6 +454,13 @@ impl Application {
             .await
     }
     pub async fn song_lyrics(&self, id: &str) -> Result<crate::lyrics::SongLyrics> {
+        if self.soundcloud.is_some() {
+            return Ok(crate::lyrics::SongLyrics {
+                video_id: id.into(),
+                text: None,
+                source: None,
+            });
+        }
         self.catalog.lyrics(id).await.map_err(|error| {
             if matches!(error.code, "cancelled" | "session_expired") {
                 error
@@ -381,18 +470,23 @@ impl Application {
         })
     }
     fn find_track(&self, id: &str) -> Option<Track> {
-        self.catalog
-            .find_track(id)
-            .or_else(|| self.account_library.find_track(id))
-            .or_else(|| self.library.find(id))
+        self.soundcloud
+            .as_ref()
+            .and_then(|cloud| cloud.find_track(id))
             .or_else(|| {
-                self.queue()
-                    .ok()?
-                    .tracks
-                    .into_iter()
-                    .find(|track| track.id == id)
+                self.catalog
+                    .find_track(id)
+                    .or_else(|| self.account_library.find_track(id))
+                    .or_else(|| self.library.find(id))
+                    .or_else(|| {
+                        self.queue()
+                            .ok()?
+                            .tracks
+                            .into_iter()
+                            .find(|track| track.id == id)
+                    })
+                    .or_else(|| self.snapshot().ok()?.track.filter(|track| track.id == id))
             })
-            .or_else(|| self.snapshot().ok()?.track.filter(|track| track.id == id))
     }
 
     pub async fn play_song(self: &Arc<Self>, id: &str) -> Result<PlaybackSelection> {
@@ -403,7 +497,10 @@ impl Application {
         id: &str,
         context: Vec<String>,
     ) -> Result<PlaybackSelection> {
-        if !crate::catalog::valid_video_id(id) {
+        if !self.foreground.load(Ordering::SeqCst) {
+            return Err(AppError::cancelled());
+        }
+        if !self.valid_track(id) {
             return Err(AppError::new(
                 "invalid_track",
                 "Choose a valid song from the music catalog.",
@@ -446,9 +543,7 @@ impl Application {
             .lock()
             .map_err(|_| AppError::internal())?
             .check(generation)?;
-        let (mut inspection, selection_generation) = self
-            .prepare(&format!("https://www.youtube.com/watch?v={id}"))
-            .await?;
+        let (mut inspection, selection_generation) = self.prepare(&self.track_url(id)).await?;
         {
             self.queue
                 .lock()
@@ -487,6 +582,9 @@ impl Application {
     }
 
     fn schedule_radio(self: &Arc<Self>) {
+        if !self.foreground.load(Ordering::SeqCst) {
+            return;
+        }
         let needed = self.queue.lock().is_ok_and(|queue| {
             queue.snapshot.running
                 && queue.snapshot.autoplay
@@ -519,7 +617,7 @@ impl Application {
         let mut cancel = self.radio_cancel.subscribe();
         cancel.borrow_and_update();
         let result = tokio::select! {
-            result = self.catalog.radio(&seed, cursor.as_ref()) => result,
+            result = self.radio_source(&seed, cursor.as_ref()) => result,
             _ = cancel.changed() => Err(AppError::cancelled()),
         };
         let mut queue = self.queue.lock().map_err(|_| AppError::internal())?;
@@ -559,8 +657,7 @@ impl Application {
                         .lock()
                         .map_err(|_| AppError::internal())?
                         .check(generation)?;
-                    app.resolver
-                        .resolve(&format!("https://www.youtube.com/watch?v={}", track.id))
+                    app.resolve_source(&app.track_url(&track.id))
                         .await
                         .map(|_| ())
                 };
@@ -820,6 +917,13 @@ impl Application {
         self.catalog.verify_account(session).await
     }
     pub async fn sign_out(&self) -> Result<AccountSnapshot> {
+        if let Some(cloud) = &self.soundcloud {
+            let snapshot = cloud.auth.sign_out().await?;
+            self.stop().await?;
+            *self.resolved.lock().map_err(|_| AppError::internal())? = None;
+            cloud.invalidate();
+            return Ok(snapshot);
+        }
         let snapshot = self.account.sign_out().await?;
         self.stop().await?;
         *self.resolved.lock().map_err(|_| AppError::internal())? = None;
@@ -850,13 +954,99 @@ impl Application {
         }
     }
     pub async fn warm_up(&self) {
+        if let Some(cloud) = &self.soundcloud {
+            cloud.restore().await;
+            return;
+        }
         let mut cancel = self.closing.subscribe();
         if *cancel.borrow_and_update() {
             return;
         }
         tokio::select! {_=async{let _=tokio::join!(self.resolver.warm_up(),self.player.warm_up(),self.restore_account());}=>{},_=cancel.changed()=>{}}
     }
+    pub(crate) fn soundcloud_service(&self) -> Option<&Arc<crate::soundcloud::SoundCloud>> {
+        self.soundcloud.as_ref()
+    }
+    fn valid_track(&self, id: &str) -> bool {
+        if self.soundcloud.is_some() {
+            crate::soundcloud::track_id(id).is_some()
+        } else {
+            crate::catalog::valid_video_id(id)
+        }
+    }
+    fn track_url(&self, id: &str) -> String {
+        if self.soundcloud.is_some() {
+            id.into()
+        } else {
+            format!("https://www.youtube.com/watch?v={id}")
+        }
+    }
+    async fn resolve_source(&self, input: &str) -> Result<ResolvedTrack> {
+        match &self.soundcloud {
+            Some(cloud) => cloud.resolve(input).await,
+            None => self.resolver.resolve(input).await,
+        }
+    }
+    async fn radio_source(
+        &self,
+        id: &str,
+        cursor: Option<&crate::radio::RadioCursor>,
+    ) -> Result<crate::radio::RadioBatch> {
+        match &self.soundcloud {
+            Some(cloud) => cloud.radio(id, cursor).await,
+            None => self.catalog.radio(id, cursor).await,
+        }
+    }
+    async fn service_work<T>(
+        &self,
+        work: impl std::future::Future<Output = Result<T>>,
+    ) -> Result<T> {
+        let mut cancel = self.service_cancel.subscribe();
+        tokio::select! {result=work=>result,_=cancel.changed()=>Err(AppError::cancelled())}
+    }
+    pub async fn restore_session(&self) {
+        if let Some(cloud) = &self.soundcloud {
+            cloud.restore().await;
+        } else {
+            self.restore_account().await;
+        }
+    }
+    pub async fn deactivate(&self) -> Result<()> {
+        self.foreground.store(false, Ordering::SeqCst);
+        self.cancel_inspection();
+        self.cancel_radio();
+        self.catalog.cancel();
+        self.account_library.cancel();
+        self.service_cancel
+            .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
+        self.queue
+            .lock()
+            .map_err(|_| AppError::internal())?
+            .cancel_work();
+        // Actor barrier: also pauses a load that was already executing when the
+        // provider changed, even if the public snapshot was still idle.
+        self.player.suspend().await?;
+        Ok(())
+    }
+    pub fn activate_provider(&self) {
+        self.foreground.store(true, Ordering::SeqCst);
+    }
+    pub fn set_foreground(&self, active: bool) {
+        self.foreground.store(active, Ordering::SeqCst);
+    }
+    pub async fn source_page(&self, id: &str) -> Result<String> {
+        self.soundcloud
+            .as_ref()
+            .ok_or_else(AppError::internal)?
+            .track_page(id)
+            .await
+    }
     pub async fn play(&self, id: &str, format_id: &str) -> Result<PlaybackSnapshot> {
+        let mut cancel = self.cancellation.subscribe();
+        let generation = *cancel.borrow_and_update();
+        if !self.foreground.load(Ordering::SeqCst) {
+            return Err(AppError::cancelled());
+        }
         let (track, format, source) = self
             .resolved
             .lock()
@@ -870,8 +1060,6 @@ impl Application {
                 )
             })?
             .source(id, format_id, self.account().revision)?;
-        let mut cancel = self.cancellation.subscribe();
-        let generation = *cancel.borrow_and_update();
         tokio::select! {result=source.wait_ready()=>result?,_=cancel.changed()=>return Err(AppError::cancelled())}
         self.player
             .load(track, format, source, cancel, generation)
@@ -881,6 +1069,9 @@ impl Application {
         self.player.snapshot()
     }
     pub async fn pause(&self, paused: bool) -> Result<PlaybackSnapshot> {
+        if !paused && !self.foreground.load(Ordering::SeqCst) {
+            return Err(AppError::cancelled());
+        }
         self.player.pause(paused).await
     }
     pub async fn seek(&self, position: f64) -> Result<PlaybackSnapshot> {

@@ -68,6 +68,10 @@ pub async fn report(
     let sign_in = vessel_app::sign_in::windows_handoff_smoke(window.app_handle().clone(), app)
         .await
         .unwrap_or_else(|error| json!({"passed":false,"error":error.code}));
+    let provider_isolation =
+        vessel_app::soundcloud::sign_in::isolation_smoke(window.app_handle().clone())
+            .await
+            .unwrap_or_else(|error| json!({"passed":false,"error":error.code}));
     let hwnd = window.hwnd().is_ok();
     let transparent = material.is_some_and(|(alpha, _, _)| alpha == 0);
     let backdrop = material.is_some_and(|(_, kind, _)| kind == 3);
@@ -82,6 +86,7 @@ pub async fn report(
         && backdrop
         && opaque
         && sign_in.get("passed").and_then(Value::as_bool) == Some(true)
+        && provider_isolation.get("passed").and_then(Value::as_bool) == Some(true)
         && probe.get("cleanDarkText").and_then(Value::as_bool) == Some(true)
         && probe.get("materialCommandFailed").and_then(Value::as_bool) != Some(true);
     let report = json!({
@@ -90,6 +95,7 @@ pub async fn report(
         "mediaControlsAvailable": media_controls,
         "transparentWebview": transparent, "nativeAcrylicBackdrop": backdrop,
         "opaqueBackdropRemoved": opaque, "signInHandoff": sign_in,
+        "providerIsolation":provider_isolation,
         "cleanDarkText": probe.get("cleanDarkText").and_then(Value::as_bool) == Some(true),
         "realAccountTested": false, "audibleOutputTested": false
     });
