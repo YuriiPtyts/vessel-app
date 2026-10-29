@@ -2,7 +2,7 @@
 
 This guide explains the project from the first working player to the current beta: what it does, what we used, why we used it, and what the choices cost us.
 
-It follows the project through **Vessel 0.1.0-beta.10** on **October 28, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
+It follows the project through **Vessel 0.1.0-beta.11** on **October 29, 2026**. Older measurements are labelled with their version. Results describe what we checked, not a promise that every computer, account, or song will behave the same way.
 
 ## Contents
 
@@ -72,6 +72,8 @@ Beta.8 separates Light/Dark from transparency, gives panels a balanced opening a
 Beta.9 adds the missing Windows native transparency setup, handles more trusted Google/YouTube sign-in completion paths, and replaces thin text outlines with filled, heavier letters and a shadow at high transparency. These fixes leave the chosen mode, background colors, icons, and saved data intact.
 
 Beta.10 adds account playlist creation and song additions, with Private as the default visibility. It also adds an on-demand lyrics window, including provider credit and a clear message when a recording has no lyrics. These use the existing Rust/provider connection rather than a separate playlist store or lyrics server.
+
+Beta.11 removes the dark text contour, shadow halo, and extra low-tint bolding. It uses Apple's native Regular Liquid Glass to support clean labels and hides sharp lower content beneath floating surfaces so overlapping text does not compete.
 
 ## 3. The basic structure
 
@@ -326,15 +328,15 @@ Sign-out forgets the stored Google session, clears the dedicated sign-in browser
 
 **Duskfox** is the default palette, based on the owner's preferred editor colors. Color roles are stored separately from layout rules so future themes can reuse the same interface.
 
-Light/Dark has its own buttons in Appearance and a sun/moon shortcut in the top bar. Glass tint ranges from 50% to 100% and changes only transparency. It never switches the mode or recolors surfaces/icons. When the glass is very clear, only letters receive extra contrast. At 100%, or with reduced transparency, the chosen material becomes solid.
+Light/Dark has its own buttons in Appearance and a sun/moon shortcut in the top bar. Glass tint ranges from 50% to 100% and changes only transparency. It never switches the mode or recolors surface/icon tokens. At 100%, or with reduced transparency, the chosen material becomes solid.
 
-Below 70% tint, dark mode uses filled, heavier white text with a dark shadow behind the letters. We removed the thin outline because it made small letters harder to read. Light mode keeps dark text with extra weight.
+Dark mode keeps normal system-font weights and primary/secondary text colors through the whole tint range. There is no text outline, halo, or forced-white fill below 70%. Native material support provides the background treatment. Light mode retains dark text with its existing modest extra low-tint weight.
 
-All main areas share the same material level. Floating panels use live vector cutouts instead of loading replacement mask images, so the background stays painted while a menu opens. Appearance's contents scroll inside its fixed background. Menus close on outside clicks or Escape, and the outside control still works.
+All main areas share the same material level. Floating panels use live vector cutouts instead of loading replacement mask images, so the background stays painted while a menu opens. These cutouts also hide sharp lower letters and artwork under the panel, preventing distracting overlapping text. Appearance's contents scroll inside its fixed background. Menus close on outside clicks or Escape, and the outside control still works.
 
 Saved playlists now scroll in their own sidebar area. The main navigation and Appearance/Account controls stay in place, even with a long playlist list.
 
-On supported macOS versions, the window uses Apple's native clear-glass effect, with a fallback on older systems. Windows uses a transparent WebView2 surface and Microsoft's Acrylic backdrop, subject to Windows' transparency settings. These native effects are separate from CSS styling inside the page; reduced transparency removes the native effect and makes the chosen material solid.
+On supported macOS versions, the window uses Apple's native **Regular Liquid Glass**, which adjusts background luminosity to help text-heavy interfaces remain legible, with a fallback on older systems. Windows uses a transparent WebView2 surface and Microsoft's Acrylic backdrop, subject to Windows' transparency settings. These native effects are separate from CSS styling inside the page; reduced transparency removes the native effect and makes the chosen material solid.
 
 Panels now open with a short, proportional scale and content fade. The old stretched genie is gone; the background keeps its alpha during the reveal. Reduced motion opens panels immediately. Artwork is loaded from provider image addresses, with a fallback if an optional larger image fails.
 
@@ -407,12 +409,13 @@ We use different tests for different questions. One type cannot stand in for all
 | Live guest tests                | Real provider search, browsing, source resolution, and native decoding work in the tested run.                                        | Premium behavior, every region/song, or subjective sound quality.                  |
 | Native/package tests            | Real windows, protected storage fixtures, installed dependencies, package integrity, and launch/quit work in the checked environment. | Every OS version, real media-key delivery, or physical speaker/headphone behavior. |
 
-For beta.10, the recorded checks include:
+For beta.11, the recorded checks include:
 
 - **59 WebKit interface tests and 35 focused Chromium tests.** Both explicit modes are checked over bright/dark/patterned backgrounds at six tint values. Tests also cover proportional reveals, outside clicks, delayed-mask flashes, player edges, Appearance scrolling, account-only likes, the 80-playlist sidebar, playlist writes, and lyrics dialogs.
+- Typography checks require no text shadow/stroke and stable dark weights/fills between 85% and 50%. Browser contrast fixtures include an explicit controlled material backing, which is not a measurement of the OS compositor. The real Mac diagnostic separately confirms Regular glass and clean WebView text styles.
 - **57 ordinary Rust library tests on macOS** and **59 on Windows**, plus two binary tests and the non-network integration check. New coverage includes authenticated playlist creation/addition, owned/read-only destinations, rejected writes, stale accounts, empty playlists, and lyrics parsing/cache boundaries.
 - Successful frontend checks/builds, Rust formatting, and Clippy checks.
-- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.10 native-window check loaded three live Home shelves; a live guest lyrics lookup returned 45 lines with source credit in the observed run.
+- Live guest search, pagination, recommended collection browsing, and muted native playback were checked in beta.6. The beta.11 native-window check loaded three live Home shelves; the beta.10 live guest lyrics lookup returned 45 lines with source credit in the observed run.
 - macOS ZIP/DMG integrity, 107 signatures, and an eight-second extracted-app launch followed by normal quit.
 - Windows native WebView2 transparency and Acrylic removal/reapply, Rust command calls, media-control availability, installed-runtime decoding/volume, install, normal launch/quit, and uninstall. A native private-browser dummy-cookie check also captures the session and closes the handoff without falsely connecting an account.
 
@@ -463,7 +466,7 @@ The installed app includes the tools it needs. **The listener does not install P
 
 GitHub Actions builds and checks Windows on a real Windows runner. macOS builds and native checks have been run on the available Apple Silicon host. That is different from proving support on every declared minimum operating-system version.
 
-The [beta.10 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.10) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
+The [beta.11 release](https://github.com/YuriiPtyts/vessel-app/releases/tag/v0.1.0-beta.11) has a roughly **75 MB ZIP**, **77 MB DMG**, and **85 MB Windows installer**. Those are compressed download sizes, rounded in decimal megabytes, not installed size or memory use.
 
 The repository contains the app source and build instructions. Large downloaded tools, built apps, caches, and test artifacts are generated separately and kept out of source commits.
 
